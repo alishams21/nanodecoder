@@ -61,14 +61,14 @@ This produces new representations where each token is enriched by information fr
 
 This operation forms a matrix of size [C, C]—called the attention matrix
 
-![self-attention](images/selfattention-calculation.jpeg)
+![self-attention](images/gpt/selfattention-calculation.jpeg)
 
 
 ### 2- Masked Self-Attention
 
 In contrast to standard (bidirectional) self-attention, decoder-only transformers use masked self-attention. This mechanism restricts each token’s view of the sequence by preventing it from attending to future tokens. Concretely, positions corresponding to later tokens are “masked out” in the attention matrix, ensuring that each token representation is computed only from itself and the tokens that precede it. This enforces causality, which is essential for autoregressive text generation.
 
-![Masked self-attention](images/masked-self-attention.jpeg)
+![Masked self-attention](images/gpt/masked-self-attention.jpeg)
 
 ### 3- Computing the Output
 
@@ -188,13 +188,13 @@ class MLP(nn.Module):
 ## Residual Connections
 A residual connection works by adding a layer’s input to its output before passing the result to the next layer. Instead of forwarding only the transformed output, the network preserves the original input signal and combines it with the layer’s output. This simple addition helps stabilize training and allows deeper networks to learn more effectively.
 
-![residual connection](images/residual-connection.jpeg)
+![residual connection](images/gpt/residual-connection.jpeg)
 
 ## Layer Normalizing
 
 Layer normalization is the most widely used normalization method in transformers and large language models, stabilizing training by normalizing activations across each feature in a layer. It consists of two parts: normalizing the activations and applying a learnable affine transformation via a weight and bias, both trainable along with the model. The normalization ensures consistent activation scales, reducing issues like exploding or vanishing gradients, improving the stability and speed of training, and enabling deeper models. Placing layer normalization before or after residual connections (Pre-LN vs Post-LN) can significantly impact gradient flow and the need for learning rate warm-up during training.
 
-![layer-normalization](images/layer-normalization.jpeg)
+![layer-normalization](images/gpt/layer-normalization.jpeg)
 
 code base for residual connection and layer normalization:
 
@@ -235,9 +235,9 @@ class Block(nn.Module):
 
 Once the structure of the input and a single block in a decoder-only transformer is understood, the rest of the architecture follows a simple pattern: the same block is stacked repeatedly, L times. Throughout this stacking, the input tensor maintains its shape, typically [B, C, d], so that after passing through all L blocks, the final output retains these dimensions.
 
-![general architecture](images/general-architecture.jpeg)
+![general architecture](images/gpt/general-architecture.jpeg)
 
-![full gpt implementation](images/gpt-full-implementation.jpeg)
+![full gpt implementation](images/gpt/gpt-full-implementation.jpeg)
 
 sample code snippet of the implementation:
 
@@ -321,4 +321,4 @@ Large language models are trained for a single core task: next-token prediction.
 
 To generate text, this procedure is repeated in an autoregressive loop. Starting from a prompt, the model processes the sequence, predicts the next token, appends it to the input, and then uses the extended sequence as the new input. Iterating this process produces coherent text, which is how all decoder-only LLMs generate language.
 
-![generatiopn](images/generation.jpeg)
+![generatiopn](images/gpt/generation.jpeg)

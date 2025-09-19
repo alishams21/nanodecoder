@@ -1,7 +1,7 @@
 
 import torch.nn as nn
 from .attention import MultiHeadAttention
-from .moelayer import MOELayer
+from .moe_layer import MOELayer
 from .normalization import Normalization
 
 
