@@ -1,0 +1,29 @@
+# GPT Model Configuration
+model:
+  vocab_size: 50257
+  max_context_length: 256  # Shortened context length (orig: 1024)
+  n_embd: 768             # Embedding dimension
+  n_heads: 12             # Number of attention heads
+  n_blocks: 12            # Number of layers
+  drop_rate: 0.1          # Dropout rate
+  qkv_bias: false         # Query-key-value bias
+
+# Training Settings
+training:
+  learning_rate: 0.0005  # 5e-4
+  num_epochs: 10
+  batch_size: 2
+  weight_decay: 0.1
+  seed: 123
+
+# Data Settings
+data:
+  file_path: "src/data/train_data/shakespeare.txt"
+  train_ratio: 0.90
+  eval_freq: 5
+  eval_iter: 1
+
+# Output Settings
+output:
+  model_save_path: "gpt_model.pth"
+  loss_plot_path: "loss.pdf"

@@ -1,0 +1,75 @@
+# GPT-2 Model Configurations
+gpt2_models:
+  gpt2_small_124m:
+    name: "gpt2-small (124M)"
+    n_embd: 768
+    n_blocks: 12
+    n_heads: 12
+    vocab_size: 50257
+    context_length: 1024
+    drop_rate: 0.0
+    qkv_bias: true
+  
+  gpt2_medium_355m:
+    name: "gpt2-medium (355M)"
+    n_embd: 1024
+    n_blocks: 24
+    n_heads: 16
+    vocab_size: 50257
+    context_length: 1024
+    drop_rate: 0.0
+    qkv_bias: true
+  
+  gpt2_large_774m:
+    name: "gpt2-large (774M)"
+    n_embd: 1280
+    n_blocks: 36
+    n_heads: 20
+    vocab_size: 50257
+    context_length: 1024
+    drop_rate: 0.0
+    qkv_bias: true
+  
+  gpt2_xl_1558m:
+    name: "gpt2-xl (1558M)"
+    n_embd: 1600
+    n_blocks: 48
+    n_heads: 25
+    vocab_size: 50257
+    context_length: 1024
+    drop_rate: 0.0
+    qkv_bias: true
+
+# Model Selection
+model_selection:
+  choose_model: "gpt2_small_124m"
+  input_prompt: "are you ready for next trip?"
+
+# Training Configuration
+training:
+  learning_rate: 0.0005
+  weight_decay: 0.1
+  num_epochs: 5
+  batch_size: 8
+  num_workers: 0
+  seed: 123
+  eval_freq: 50
+  eval_iter: 5
+
+# Data Configuration
+data:
+  url: "https://archive.ics.uci.edu/static/public/228/sms+spam+collection.zip"
+  zip_path: "sms_spam_collection.zip"
+  extracted_path: "sms_spam_collection"
+  data_file_path: "sms_spam_collection/SMSSpamCollection.tsv"
+  train_ratio: 0.7
+  validation_ratio: 0.1
+  test_ratio: 0.2
+  max_length: null  # Will be determined dynamically
+
+# Model Output
+output:
+  model_save_path: "fine_tuned_with_spam_head.pth"
+  train_csv: "train.csv"
+  validation_csv: "validation.csv"
+  test_csv: "test.csv"

@@ -1,0 +1,41 @@
+# GPT-2 Model Configurations
+gpt2_models:
+  gpt2_small_124m:
+    name: "gpt2-small (124M)"
+    n_embd: 768
+    n_blocks: 12
+    n_heads: 12
+    vocab_size: 50257
+    context_length: 1024
+    drop_rate: 0.1
+    qkv_bias: true
+  
+  gpt2_medium_355m:
+    name: "gpt2-medium (355M)"
+    n_embd: 1024
+    n_blocks: 24
+    n_heads: 16
+    vocab_size: 50257
+    context_length: 1024
+    drop_rate: 0.1
+    qkv_bias: true
+  
+  gpt2_large_774m:
+    name: "gpt2-large (774M)"
+    n_embd: 1280
+    n_blocks: 36
+    n_heads: 20
+    vocab_size: 50257
+    context_length: 1024
+    drop_rate: 0.1
+    qkv_bias: true
+  
+  gpt2_xl_1558m:
+    name: "gpt2-xl (1558M)"
+    n_embd: 1600
+    n_blocks: 48
+    n_heads: 25
+    vocab_size: 50257
+    context_length: 1024
+    drop_rate: 0.1
+    qkv_bias: true
