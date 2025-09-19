@@ -18,7 +18,7 @@ training:
 
 # Data Settings
 data:
-  file_path: "src/data/train_data/shakespeare.txt"
+  file_path: "gpt/data/train_data/shakespeare.txt"
   train_ratio: 0.90
   eval_freq: 5
   eval_iter: 1
