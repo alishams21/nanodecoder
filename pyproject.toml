@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "nanodecoder"
+name = "Nanodecoder"
 version = "0.1.0"
 description = "A foundation for experimenting with and extending Transformer architectures, focusing on decoder-only models like GPT"
 readme = "README.md"
