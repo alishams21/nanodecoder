@@ -14,7 +14,7 @@ from utils.training_utils import calc_loss_batch, evaluate_model
 from utils.plot_utils import plot_losses
 
 
-def load_config(config_path="src/train/config.yaml"):
+def load_config(config_path="gpt/train/config.yaml"):
     """Load configuration from YAML file."""
     with open(config_path, 'r') as file:
         config = yaml.safe_load(file)

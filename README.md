@@ -23,19 +23,19 @@ This project uses `uv` for fast Python package management. To get started:
    .venv\Scripts\activate     # On Windows
    ```
 
-To train your model, you can run following command. Data sample of shakespeare.txt is given for now under ```/src/data/train_data/shakespeare.txt``` . You can change your data source based on reqs:
+To train your model, you can run following command. Data sample of shakespeare.txt is given for now under ```/gpt/data/train_data/shakespeare.txt``` . You can change your data source based on reqs:
 ```bash
-uv run python src/train/gpt_train.py
+uv run python gpt/train/gpt_train.py
 ``` 
 
-To fine-tune the model, 2 fine-tuning head is considered you can extend on that. First is for simple ham/spam classification fine tuner. Other is instruction following fine-tuner, again you can change the finetuning head and data based on your needs:
+To fine-tune the model, 2 fine-tuning examples is considered you can extend on that. First is for simple ham/spam classification fine tuner. Other is instruction following fine-tuner, again you can change the finetuning head and data based on your needs:
 
 ``` bash
-uv run python src/fine_tuning/instruction_head_fine_tuning/instruction_head_find_tuner.py
+uv run python gpt/fine_tuning/instruction_head_fine_tuning/instruction_head_find_tuner.py
 ```
 
 ```bash
-uv run python src/fine_tuning/spam_head_fine_tuning/spam_head_fine_tuner.py
+uv run python gpt/fine_tuning/spam_head_fine_tuning/spam_head_fine_tuner.py
 ```
 
 

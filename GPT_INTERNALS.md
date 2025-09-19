@@ -235,6 +235,8 @@ class Block(nn.Module):
 
 Once the structure of the input and a single block in a decoder-only transformer is understood, the rest of the architecture follows a simple pattern: the same block is stacked repeatedly, L times. Throughout this stacking, the input tensor maintains its shape, typically [B, C, d], so that after passing through all L blocks, the final output retains these dimensions.
 
+![general architecture](images/general-architecture.jpeg)
+
 ![full gpt implementation](images/gpt-full-implementation.jpeg)
 
 sample code snippet of the implementation:
