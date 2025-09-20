@@ -13,6 +13,7 @@ model:
   capacity_factor: 1.25   # Capacity factor
   bias: false             # Bias
   dropout: 0.2            # Dropout rate
+  flash_self_attention: false # for faster self-attention
 
 # Training Settings
 training:
