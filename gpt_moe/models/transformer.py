@@ -14,9 +14,10 @@ class TransformerBlock(nn.Module):
             max_context_length=config["max_context_length"],
             num_heads=config["n_heads"],
             dropout=config["drop_rate"],
-            qkv_bias=config["qkv_bias"])
+            qkv_bias=config["qkv_bias"],
+            flash_self_attention=config["flash_self_attention"])
         self.moe_layer = MOELayer(config)
-        self.att_norm = Normalization(config["n_embd"])
+        self.att_norm = Normalization(config["n_embd"], config["bias"])
         self.moe_layer_norm = Normalization(config["n_embd"])
         self.drop_shortcut = nn.Dropout(config["drop_rate"])
 
@@ -32,7 +33,6 @@ class TransformerBlock(nn.Module):
         residual_connection = x  # (B,T,C)
         x = self.moe_layer_norm(x)  # (B,T,C)
         x = self.moe_layer(x)  # (B,T,C)
-        x = self.drop_shortcut(x)  # (B,T,C)
         x = x + residual_connection  # (B,T,C)
 
         return x 

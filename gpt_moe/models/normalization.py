@@ -1,17 +1,13 @@
 
 import torch
 import torch.nn as nn
-
+from torch.nn import functional as F
 
 class Normalization(nn.Module):
-    def __init__(self, emb_dim):
+    def __init__(self, e_dim, bias):
         super().__init__()
-        self.eps = 1e-5
-        self.scale = nn.Parameter(torch.ones(emb_dim))
-        self.shift = nn.Parameter(torch.zeros(emb_dim))
+        self.weight = nn.Parameter(torch.ones(e_dim))
+        self.bias = nn.Parameter(torch.zeros(e_dim)) if bias else None
 
-    def forward(self, x):
-        mean = x.mean(dim=-1, keepdim=True)
-        var = x.var(dim=-1, keepdim=True, unbiased=False)
-        norm_x = (x - mean) / torch.sqrt(var + self.eps)
-        return self.scale * norm_x + self.shift
+    def forward(self, input):
+        return F.layer_norm(input, self.weight.shape, self.weight, self.bias, 1e-5)
