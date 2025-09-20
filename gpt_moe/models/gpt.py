@@ -1,8 +1,15 @@
 import torch
 import torch.nn as nn
+import sys
+import os
+
+# Add the src directory to the Python path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
+from utils.initialization_utils import init_weights, apply_gpt2_residual_scaling
+from utils.params_util import print_model_info
 from .transformer import TransformerBlock
 from .normalization import Normalization
-
 
 class GPT(nn.Module):
     def __init__(self, config):
@@ -24,6 +31,9 @@ class GPT(nn.Module):
 
         self.final_norm = Normalization(config) # (B,T,C)
         self.out_head = nn.Linear(config["n_embd"], config["vocab_size"], bias=False) # (C,V)
+        self.apply(lambda module: init_weights(module, config))
+        apply_gpt2_residual_scaling(self, config)
+        print_model_info(self, non_embedding=True)
 
     def forward(self, in_idx):
         b, seq_len = in_idx.shape # (B,T)
