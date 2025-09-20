@@ -17,8 +17,8 @@ class TransformerBlock(nn.Module):
             qkv_bias=config["qkv_bias"],
             flash_self_attention=config["flash_self_attention"])
         self.moe_layer = MOELayer(config)
-        self.att_norm = Normalization(config["n_embd"], config["bias"])
-        self.moe_layer_norm = Normalization(config["n_embd"])
+        self.att_norm = Normalization(config)
+        self.moe_layer_norm = Normalization(config)
         self.drop_shortcut = nn.Dropout(config["drop_rate"])
 
     def forward(self, x):

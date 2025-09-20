@@ -20,8 +20,8 @@ class MLPExperts(nn.Module):
         self.bias = config["bias"]
         self.c_fc = nn.Parameter(torch.empty(config["n_exp"], config["n_embd"], 4 * config["n_embd"]))
         self.c_proj = nn.Parameter(torch.empty(config["n_exp"], 4 * config["n_embd"], config["n_embd"]))
-        self.fc_bias = nn.Parameter(torch.empty(config["n_exp"], 1, 4 * config["n_embd"])) if self.config["bias"] else None
-        self.proj_bias = nn.Parameter(torch.empty(config["n_exp"], 1, config["n_embd"])) if self.config["bias"] else None
+        self.fc_bias = nn.Parameter(torch.empty(config["n_exp"], 1, 4 * config["n_embd"])) if config["bias"] else None
+        self.proj_bias = nn.Parameter(torch.empty(config["n_exp"], 1, config["n_embd"])) if config["bias"] else None
         self.gelu = GELU()
         self.dropout = nn.Dropout(config["dropout"])
 
