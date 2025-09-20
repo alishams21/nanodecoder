@@ -22,26 +22,6 @@ If you want to understand how Mixture-of-Experts (MoE) models work and how they 
 
 This guide includes code implementations, mathematical explanations, and visual diagrams to help you understand how MoE models achieve efficiency while maintaining performance in large-scale language models.
 
-## GPT Architecture
-Following picture shows architecture of GPT
-
-![GPT](images/gpt/gpt.png)
-
-If you want to dive deep into the internals of GPT architecture and understand how each component works, check out our detailed guide:
-
-📖 **[GPT Internals Guide](GPT_INTERNALS.md)** - Complete breakdown of GPT components including:
-- Token & Positional Embeddings
-- Multi-Head Self-Attention mechanisms
-- Feed-Forward Networks (MLP)
-- Residual Connections & Layer Normalization
-- Stacked Transformer Blocks
-- Output Projection & Text Generation
-
-This guide includes code implementations, mathematical explanations, and visual diagrams to help you understand every aspect of the GPT architecture from the ground up.
-
-
-
-
 ## Installation
 
 This project uses `uv` for fast Python package management. To get started:
@@ -63,10 +43,41 @@ This project uses `uv` for fast Python package management. To get started:
    .venv\Scripts\activate     # On Windows
    ```
 
+To train your moe model, you can run following command. Data sample of shakespeare.txt is given for now under ```/gpe-moe/data/train_data/shakespeare.txt``` . You can change your data source based on reqs:
+
+```bash
+uv run python gpt-moe/train/gpt_train.py
+``` 
+To load weights from trained models you can use following command
+
+## GPT Architecture
+Following picture shows architecture of GPT
+
+![GPT](images/gpt/gpt.png)
+
+If you want to dive deep into the internals of GPT architecture and understand how each component works, check out our detailed guide:
+
+📖 **[GPT Internals Guide](GPT_INTERNALS.md)** - Complete breakdown of GPT components including:
+- Token & Positional Embeddings
+- Multi-Head Self-Attention mechanisms
+- Feed-Forward Networks (MLP)
+- Residual Connections & Layer Normalization
+- Stacked Transformer Blocks
+- Output Projection & Text Generation
+
+This guide includes code implementations, mathematical explanations, and visual diagrams to help you understand every aspect of the GPT architecture from the ground up.
+
+
 To train your model, you can run following command. Data sample of shakespeare.txt is given for now under ```/gpt/data/train_data/shakespeare.txt``` . You can change your data source based on reqs:
+
 ```bash
 uv run python gpt/train/gpt_train.py
 ``` 
+To load weights from trained models you can use following command
+
+```bash
+uv run python gpt/wight_loader/gpt2_weights_evaluator.py
+```
 
 To fine-tune the model, 2 fine-tuning examples is considered you can extend on that. First is for simple ham/spam classification fine tuner. Other is instruction following fine-tuner, again you can change the finetuning head and data based on your needs:
 
