@@ -14,6 +14,11 @@ model:
   bias: false             # Bias
   dropout: 0.2            # Dropout rate
   flash_self_attention: false # for faster self-attention
+  use_switch_tfm_init: false # Use switch transformer-style initialization
+  switch_tfm_init_scale: 1.0 # Switch transformer-style initialization scale
+  use_switch_tfm_init_experts: false # Use switch transformer-style initialization for experts
+  switch_tfm_init_scale_experts: 1.0 # Switch transformer-style initialization scale for experts
+
 
 # Training Settings
 training:
