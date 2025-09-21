@@ -2,6 +2,19 @@
 
 Nanodecoder is meant as a foundation for experimenting, and extending Transformer architectures. Modern large language models (LLMs) predominantly adopt a decoder-only transformer architecture, omitting separate encoder modules and cross-attention mechanisms typical of encoder-decoder designs. These decoder-only models rely solely on causal self-attention within stacked transformer blocks, enabling efficient and scalable autoregressive text generation. Such a structure is ideal for tasks that require prediction of the next token in a sequence, making it the backbone of systems like GPT-4 and Llama-2. In contrast, encoder-decoder models—which do feature explicit cross-attention for integrating source and target sequences—are primarily reserved for applications like machine translation. Nanodecoder help you deep dive and understand internals of decoder only models and build your own llm from scratch.
 
+
+## Feature Comparison
+
+| Feature | CPU | GPU | Mixed | DDP | Compile | Full |
+|---------|-----|-----|-------|-----|---------|------|
+| CPU training | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| GPU training | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Mixed precision | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
+| Multi-GPU DDP | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ |
+| Model compilation | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ |
+| MoE support | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Wandb logging | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+
 ## GPT with MoE Architecture
 
 Following image shows the architecture of GPT with MoE:
@@ -49,6 +62,7 @@ To train your moe model, you can run following command. Data sample of shakespea
 uv run python gpt-moe/train/gpt_train.py
 ``` 
 To load weights from trained models you can use following command
+
 
 ## GPT Architecture
 Following picture shows architecture of GPT

@@ -27,20 +27,28 @@ class MOELayer(nn.Module):
         )
 
     def forward(self, x: torch.Tensor):
-        B, C, d = x.size() # track original shape of input
-        num_tokens = (B * C)
+        B, T, n_embd = x.size() # track original shape of input
+        num_tokens = (B * T)
 
         # pass each token through the router
-        exp_weight, exp_mask, exp_batches = self.router(x)
+        used_capacity, exp_weight, exp_mask = self.router(x)
+
+        # flatten out the input
+        x = x.view(num_tokens, n_embd)
+
+        # reshape tokens into batches for each expert
+        # [n_exp, exp_capacity, B * T] * [B * T, n_embd] -> [n_exp, exp_capacity, n_embd]
+        exp_batches = exp_mask.permute(1, 2, 0).type_as(x) @ x
 
         # compute expert output
-        exp_out = self.experts(exp_batches) # [n_exp, exp_capacity, d]
+        exp_out = self.experts(exp_batches) # [n_exp, exp_capacity, n_embd]
 
         # aggregate expert outputs based on router weights
         # eq (2) on page 4 of ST-MoE (https://arxiv.org/abs/2202.08906)
-        exp_weight = exp_weight.view(num_tokens, -1) # [B * C, n_exp * exp_capacity]
-        exp_out = exp_out.view(-1, d) # [n_exp * exp_capacity, d] 
-        output = exp_weight @ exp_out # [B * C, d]
+        # similar equations are used for other MoE papers
+        exp_weight = exp_weight.view(num_tokens, -1) # [B * T, n_exp * exp_capacity]
+        exp_out = exp_out.view(-1, n_embd) # [n_exp * exp_capacity, n_embd] 
+        output = exp_weight @ exp_out # [B * T, n_embd]
         
         # resize output before return
-        return output.view(B, C, d)
+        return output.view(B, T, n_embd)
