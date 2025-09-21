@@ -3,7 +3,7 @@ model:
   vocab_size: 50257
   max_context_length: 256  # Shortened context length (orig: 1024)
   n_embd: 768             # Embedding dimension
-  n_heads: 12             # Number of attention heads
+  n_head: 12             # Number of attention heads
   n_blocks: 12            # Number of layers
   drop_rate: 0.1          # Dropout rate
   qkv_bias: false         # Query-key-value bias
@@ -14,10 +14,18 @@ model:
   bias: false             # Bias
   dropout: 0.2            # Dropout rate
   flash_self_attention: false # for faster self-attention
-  use_switch_tfm_init: false # Use switch transformer-style initialization
+  use_switch_tfm_init: true # Use switch transformer-style initialization
   switch_tfm_init_scale: 1.0 # Switch transformer-style initialization scale
-  use_switch_tfm_init_experts: false # Use switch transformer-style initialization for experts
+  use_switch_tfm_init_experts: true # Use switch transformer-style initialization for experts
   switch_tfm_init_scale_experts: 1.0 # Switch transformer-style initialization scale for experts
+  stride: 2 # One in every stride layers are converted to an MoE
+  use_moe: true # Use MoE
+  use_aux_loss: false # Use auxiliary loss
+  use_router_z_loss: false # Use router z loss
+  router_use_full_prec: false # Use full precision in the router
+  train_capacity: 1.25 # Train capacity
+  eval_capacity: 2.0 # Eval capacity
+  min_capacity: 4 # Minimum capacity
 
 
 # Training Settings

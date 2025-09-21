@@ -3,8 +3,8 @@
 from .attention import MultiHeadAttention
 from .normalization import Normalization
 from .activations import GELU
-from .feedforward import FeedForward
+from .mlp import MLP
 from .transformer import TransformerBlock
 from .gpt import GPT
 
-__all__ = ['MultiHeadAttention', 'Normalization', 'GELU', 'FeedForward', 'TransformerBlock', 'GPT']
+__all__ = ['MultiHeadAttention', 'Normalization', 'GELU', 'MLP', 'TransformerBlock', 'GPT']
