@@ -10,6 +10,8 @@ from utils.initialization_utils import init_weights, apply_gpt2_residual_scaling
 from utils.params_util import print_model_info
 from .transformer import TransformerBlock
 from .normalization import Normalization
+from torch.nn import functional as F
+from utils.manager import MANAGER
 
 class GPT(nn.Module):
     def __init__(self, config):
@@ -22,7 +24,7 @@ class GPT(nn.Module):
         assert config["n_head"] > 0, "n_head must be greater than 0"
         assert config["bias"] == True or config["bias"] == False, "bias must be a boolean"
         
-
+        self.config = config
         if config["n_exp"] == 1:
             blocks = nn.ModuleList(
                 *[TransformerBlock(config) for _ in range(config["n_blocks"])]) # (B,T,C)
@@ -54,6 +56,27 @@ class GPT(nn.Module):
         x = self.trf_blocks.drop_emb(tok_embeds + pos_embeds) # (B,T,C)
         for block in self.trf_blocks.transformer_blocks:
             x = block(x)
-        x = self.trf_blocks.final_norm(x) # (B,T,C)     
-        logits = self.out_head(x) # (C,V)
-        return logits
+        x = self.trf_blocks.final_norm(x) # (B,T,C)    
+        if targets is not None:
+            # if we are given some desired targets also calculate the loss
+            logits = self.out_head(x) # (C,V)
+            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
+            if self.config["n_exp"] > 1 and self.config["use_aux_loss"]:
+                loss += self.config["aux_loss_weight"] * MANAGER.aggregate_aux_loss()
+                MANAGER.reset_aux_loss()
+            if self.config["n_exp"] > 1 and self.config["use_router_z_loss"]:
+                loss += self.config["router_z_loss_weight"] * MANAGER.aggregate_router_z_loss()
+                MANAGER.reset_router_z_loss()
+        else:
+            logits = self.out_head(x) # (C,V)
+            loss = None
+
+        return logits, loss
+
+    def model_surgery(self, block_size):
+        assert block_size <= self.config["max_context_length"]
+        self.config["max_context_length"] = block_size
+        self.trf_blocks.pos_emb.weight = nn.Parameter(self.trf_blocks.pos_emb.weight[:block_size])
+        for block in self.trf_blocks.transformer_blocks:
+            if hasattr(block.multi_head_att, 'bias'):
+                block.multi_head_att.bias = block.multi_head_att.bias[:,:,:block_size,:block_size]

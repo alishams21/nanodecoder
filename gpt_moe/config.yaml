@@ -20,8 +20,8 @@ model:
   switch_tfm_init_scale_experts: 1.0 # Switch transformer-style initialization scale for experts
   stride: 2 # One in every stride layers are converted to an MoE
   use_moe: true # Use MoE
-  use_aux_loss: false # Use auxiliary loss
-  use_router_z_loss: false # Use router z loss
+  use_aux_loss: true # Use auxiliary loss
+  use_router_z_loss: true # Use router z loss
   router_use_full_prec: false # Use full precision in the router
   train_capacity: 1.25 # Train capacity
   eval_capacity: 2.0 # Eval capacity
