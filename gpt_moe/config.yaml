@@ -26,7 +26,8 @@ model:
   train_capacity: 1.25 # Train capacity
   eval_capacity: 2.0 # Eval capacity
   min_capacity: 4 # Minimum capacity
-
+  aux_loss_weight: 0.001 # Auxiliary loss weight
+  router_z_loss_weight: 0.01 # Router z loss weight
 
 # Training Settings
 training:
@@ -35,9 +36,29 @@ training:
   batch_size: 2
   weight_decay: 0.1
   seed: 123
+  max_iters: 300  # Maximum training iterations
+  eval_interval: 50  # Evaluate every N iterations
+  log_interval: 10  # Log every N iterations
+  eval_iters: 40  # Number of evaluation iterations
+  grad_clip: 1.0  # Gradient clipping value
+  eval_only: false # Only evaluate the model
+
+# Learning Rate Schedule Settings
+lr_schedule:
+  decay_lr: true  # Enable learning rate decay
+  warmup_iters: 1000  # Warmup iterations
+  lr_decay_iters: 10000  # Learning rate decay iterations
+  min_lr: 0.0001  # Minimum learning rate (1e-4)
+
+optimizer:
+  weight_decay: 0.1
+  learning_rate: 0.0005
+  betas: [0.9, 0.95]
+  device_type: "cpu"
 
 # Data Settings
 data:
+  dataset: "data/shakespeare"
   file_path: "gpt_moe/data/train_data/shakespeare.txt"
   train_ratio: 0.90
   eval_freq: 5
@@ -47,3 +68,5 @@ data:
 output:
   model_save_path: "gpt_model.pth"
   loss_plot_path: "loss.pdf"
+  always_save_checkpoint: true
+  checkpoint_path: "gpt_moe/checkpoints"

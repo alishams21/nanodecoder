@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import sys
 import os
+import inspect
 
 # Add the src directory to the Python path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -80,3 +81,31 @@ class GPT(nn.Module):
         for block in self.trf_blocks.transformer_blocks:
             if hasattr(block.multi_head_att, 'bias'):
                 block.multi_head_att.bias = block.multi_head_att.bias[:,:,:block_size,:block_size]
+
+    def configure_optimizers(self, config):
+        # TODO: add expert config
+        # start with all of the candidate parameters
+        param_dict = {pn: p for pn, p in self.named_parameters()}
+        # filter out those that do not require grad
+        param_dict = {pn: p for pn, p in param_dict.items() if p.requires_grad}
+        # create optim groups. Any parameters that is 2D will be weight decayed, otherwise no.
+        # i.e. all weight tensors in matmuls + embeddings decay, all biases and layernorms don't.
+        # add an extra check for "bias" string to account for bias terms in MoE layers
+        decay_params = [p for n, p in param_dict.items() if (p.dim() >= 2 and not n.endswith('bias'))]
+        nodecay_params = [p for n, p in param_dict.items() if (p.dim() < 2 or n.endswith('bias'))]
+        optim_groups = [
+            {'params': decay_params, 'weight_decay': config["weight_decay"]},
+            {'params': nodecay_params, 'weight_decay': 0.0}
+        ]
+        num_decay_params = sum(p.numel() for p in decay_params)
+        num_nodecay_params = sum(p.numel() for p in nodecay_params)
+        print(f"num decayed parameter tensors: {len(decay_params)}, with {num_decay_params:,} parameters")
+        print(f"num non-decayed parameter tensors: {len(nodecay_params)}, with {num_nodecay_params:,} parameters")
+        # Create AdamW optimizer and use the fused version if it is available
+        fused_available = 'fused' in inspect.signature(torch.optim.AdamW).parameters
+        use_fused = fused_available and config["device_type"] == 'cuda'
+        extra_args = dict(fused=True) if use_fused else dict()
+        optimizer = torch.optim.AdamW(optim_groups, lr=config["learning_rate"], betas=config["betas"], **extra_args)
+        print(f"using fused AdamW: {use_fused}")
+
+        return optimizer
