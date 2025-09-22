@@ -47,7 +47,7 @@ import time
 import math
 from contextlib import nullcontext
 # Add the src directory to the Python path
-sys.path.append(os.path.join(os.path.dirname(__file__), 'gpt_moe'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from models.gpt import GPT
 from utils.plot_utils import plot_losses
@@ -87,7 +87,7 @@ if torch.cuda.is_available():
     print(f"BF16 supported: {torch.cuda.is_bf16_supported()}")
 print(f"Data type: {dtype}")
 print(f"Batch size: {TRAINING_SETTING['batch_size']}")
-print(f"Model size: {MODEL_SETTING['n_blocks']} layers, {MODEL_SETTING['n_heads']} heads, {MODEL_SETTING['n_embd']} embd")
+print(f"Model size: {MODEL_SETTING['n_blocks']} layers, {MODEL_SETTING['n_head']} heads, {MODEL_SETTING['n_embd']} embd")
 print("=" * 50)
 
 # Enable optimizations for GPU
