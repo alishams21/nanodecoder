@@ -8,7 +8,7 @@ model:
   drop_rate: 0.1          # Dropout rate
   qkv_bias: false         # Query-key-value bias
   n_exp: 2                # Number of experts
-  top_k: 2                # Top k experts
+  top_k: 1                # Top k experts
   use_noisy_top_k: true   # Use noisy top k
   capacity_factor: 1.25   # Capacity factor
   bias: false             # Bias
@@ -29,37 +29,60 @@ model:
   aux_loss_weight: 0.001 # Auxiliary loss weight
   router_z_loss_weight: 0.01 # Router z loss weight
 
+device:
+  device_type: "cpu"
+  num_workers: 0
+  pin_memory: true
+  non_blocking: true
+  tf32: true
+  cudnn_tf32: true
+  cudnn_benchmark: false
+  cudnn_deterministic: false
+  cudnn_allow_tf32: true
+  cudnn_allow_tf32_autotune: true
+  cudnn_allow_tf32_autotune_deterministic: false
+  cudnn_allow_tf32_autotune_deterministic_deterministic: false
+
+# Memory Management Settings
+memory:
+  enable_memory_pool: true     # Enable memory pooling for tensor reuse
+  buffer_size: 2              # Number of batches to prefetch (2-4 recommended)
+  max_pool_size: 4            # Maximum number of tensors to keep in memory pool
+  enable_prefetching: true     # Enable background batch prefetching
+  prefetch_timeout: 5.0        # Timeout for prefetch operations (seconds)
+  memory_monitoring: true     # Enable memory usage monitoring
+  auto_optimize: true         # Automatically optimize settings based on hardware
+
 # Training Settings
 training:
   learning_rate: 0.0005  # 5e-4
   num_epochs: 10
-  batch_size: 2
+  batch_size: 8
   weight_decay: 0.1
   seed: 123
-  max_iters: 300  # Maximum training iterations
-  eval_interval: 50  # Evaluate every N iterations
-  log_interval: 10  # Log every N iterations
-  eval_iters: 40  # Number of evaluation iterations
+  max_iters: 1000  # Maximum training iterations
+  eval_interval: 100  # Evaluate every N iterations
+  log_interval: 20  # Log every N iterations
+  eval_iters: 22  # Number of batches per evaluation cycle
   grad_clip: 1.0  # Gradient clipping value
   eval_only: false # Only evaluate the model
+  best_val_loss: 1000 # Best validation loss this is for initialisation
 
 # Learning Rate Schedule Settings
 lr_schedule:
   decay_lr: true  # Enable learning rate decay
-  warmup_iters: 1000  # Warmup iterations
-  lr_decay_iters: 10000  # Learning rate decay iterations
+  warmup_iters: 400  # Warmup iterations
+  lr_decay_iters: 700  # Learning rate decay iterations
   min_lr: 0.0001  # Minimum learning rate (1e-4)
 
 optimizer:
   weight_decay: 0.1
   learning_rate: 0.0005
   betas: [0.9, 0.95]
-  device_type: "cpu"
 
 # Data Settings
 data:
   dataset: "data/shakespeare"
-  file_path: "gpt_moe/data/train_data/shakespeare.txt"
   train_ratio: 0.90
   eval_freq: 5
   eval_iter: 1
