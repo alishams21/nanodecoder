@@ -42,6 +42,7 @@ device:
   cudnn_allow_tf32_autotune: true
   cudnn_allow_tf32_autotune_deterministic: false
   cudnn_allow_tf32_autotune_deterministic_deterministic: false
+  nproc_per_node: 1  # Number of processes per node for DDP training (use with torchrun --nproc_per_node=N)
 
 # Memory Management Settings
 memory:
@@ -63,10 +64,11 @@ training:
   max_iters: 1000  # Maximum training iterations
   eval_interval: 100  # Evaluate every N iterations
   log_interval: 20  # Log every N iterations
-  eval_iters: 22  # Number of batches per evaluation cycle
+  eval_iters: 10  # Number of batches per evaluation cycle
   grad_clip: 1.0  # Gradient clipping value
   eval_only: false # Only evaluate the model
   best_val_loss: 1000 # Best validation loss this is for initialisation
+  accumulation_steps: 4  # number of gradient accumulation steps each individual GPU performs (1 = no accumulation)
 
 # Learning Rate Schedule Settings
 lr_schedule:
