@@ -67,7 +67,7 @@ torch.manual_seed(TRAINING_SETTING["seed"])
 
 
 # enable optimizations for GPU
-if OPTIMIZER_SETTING["device_type"] == 'cuda':
+if DEVICE_SETTING["device_type"] == 'cuda':
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
     device_type = 'cuda'

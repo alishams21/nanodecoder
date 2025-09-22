@@ -30,7 +30,7 @@ model:
   router_z_loss_weight: 0.01 # Router z loss weight
 
 device:
-  device_type: "cpu"
+  device_type: "cuda"
   num_workers: 0
   pin_memory: true
   non_blocking: true
