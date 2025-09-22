@@ -1,34 +1,33 @@
 """
-CPU-Optimized GPT Trainer for MoE Models
+GPU-Optimized GPT Trainer for MoE Models
 
-This trainer is specifically designed for CPU training with the following features:
+This trainer is specifically optimized for GPU training with the following features:
 
-CPU OPTIMIZATIONS:
-- Standard PyTorch CPU operations without GPU-specific optimizations
-- Simple data loading with standard .to(device) operations
-- Compatible with any CPU architecture (x86, ARM, etc.)
-- No CUDA dependencies or GPU memory requirements
+GPU OPTIMIZATIONS:
+- TF32 (Tensor Float 32-bit) support for ~1.5x faster matrix operations
+- cuDNN TF32 optimization for faster convolutions and neural network operations
+- CUDA memory pinning for faster CPU-GPU data transfer
+- Non-blocking GPU transfers for improved pipeline efficiency
 - Memory management with batch prefetching and memory pooling
 
 REQUIREMENTS:
-- CPU: Any modern CPU architecture (x86_64, ARM64, etc.)
-- PyTorch: Any version with CPU support
-- Memory: Sufficient RAM for model and batch size
-- No GPU or CUDA installation required
+- GPU: Ampere architecture (RTX 30xx, A100, etc.) for TF32 support
+- PyTorch: 1.7+ for TF32 compatibility
+- CUDA: 11.0+ for TF32 operations
+- Memory: Sufficient GPU memory for model and batch size
 
 SUITABILITY:
-- Best for: Development, testing, small models, CPU-only environments
-- Memory: Uses standard CPU memory management with optimizations
-- Performance: Slower than GPU but more accessible
-- Compatibility: Works on any system without GPU
+- Best for: Large MoE models, production training, high-throughput scenarios
+- Memory: Optimized for GPU memory management with pin_memory() and memory pooling
+- Performance: ~1.5x speedup over standard FP32 training
+- Accuracy: ~99.9% accuracy retention with TF32 optimizations
 
 NOT SUITABLE FOR:
-- Large-scale training (use trainer_on_gpu.py instead)
-- Production training with large models
-- High-throughput scenarios
-- GPU-accelerated environments
+- CPU-only environments (use trainer_on_cpu.py instead)
+- TPU training (requires different optimizations)
+- Older GPUs without TF32 support
+- Memory-constrained environments
 
-For GPU training, use trainer_on_gpu.py with TF32 optimizations.
 For TPU training, consider creating a separate trainer_on_tpu.py with XLA optimizations.
 """
 
@@ -45,10 +44,10 @@ import math
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from models.gpt import GPT
-from utils.training_utils import load_config, get_lr, get_batch, estimate_loss
 from utils.plot_utils import plot_losses
 from utils.initialization_utils import apply_gpt2_residual_scaling
 from utils.params_util import print_model_info, get_num_params
+from utils.training_utils import load_config, get_lr, get_batch, estimate_loss
 from utils.memory_utils import memory_optimized_training, MemoryMonitor, optimize_memory_settings
 
 import numpy as np
@@ -66,12 +65,21 @@ DEVICE_SETTING = config["device"]
 MEMORY_SETTING = config["memory"]  # Add memory settings
 torch.manual_seed(TRAINING_SETTING["seed"])
 
+
+# enable optimizations for GPU
+if OPTIMIZER_SETTING["device_type"] == 'cuda':
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+    device_type = 'cuda'
+else:
+    device_type = 'cpu'
+
+
 data_dir = os.path.join('gpt_moe', DATA_SETTINGS["dataset"])
-device = torch.device(DEVICE_SETTING["device_type"])
 
 # Create a wrapper function for get_batch with the specific parameters
 def get_batch_wrapper(split):
-    return get_batch(split, data_dir, MODEL_SETTING, TRAINING_SETTING, device, DEVICE_SETTING["device_type"])
+    return get_batch(split, data_dir, MODEL_SETTING, TRAINING_SETTING, device, device_type)
 
 # get vocab size
 meta_path = os.path.join(data_dir, 'meta.pkl')
@@ -81,11 +89,12 @@ if os.path.exists(meta_path):
         meta = pickle.load(f)
     meta_vocab_size = meta['vocab_size']
     print(f"Found vocab_size = {meta_vocab_size}")
+    
+    
 vocab_size = meta_vocab_size if meta_vocab_size is not None else MODEL_SETTING["vocab_size"]
 # Update vocab_size in MODEL_SETTING if we got it from meta
 if meta_vocab_size is not None:
     MODEL_SETTING["vocab_size"] = meta_vocab_size
-
 model = GPT(MODEL_SETTING)
 
 # Apply GPT-2 residual scaling for better initialization
@@ -102,7 +111,7 @@ print("=" * 50)
 optimizer = model.configure_optimizers(OPTIMIZER_SETTING, DEVICE_SETTING["device_type"])
 
 # Set device
-device = torch.device(DEVICE_SETTING["device_type"])
+device = torch.device(DEVICE_SETTING["device_type"])    
 model.to(device)
 print(f"Using device: {device}")
 
@@ -130,7 +139,7 @@ print(f"Memory optimization settings: {memory_settings}")
 # init training state
 iter_num = 0
 
-def cpu_based_trainer(model, optimizer, device, max_iters, eval_interval, log_interval, 
+def gpu_based_trainer(model, optimizer, device, max_iters, eval_interval, log_interval, 
                        grad_clip, eval_only=False):
     """
     Train the model with the given configuration.
@@ -190,7 +199,10 @@ def cpu_based_trainer(model, optimizer, device, max_iters, eval_interval, log_in
                 memory_stats = memory_monitor.get_stats()
                 
                 print(f"Step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
-                print(f"Memory usage: {memory_stats['current_mb']:.1f}MB (peak: {memory_stats['peak_mb']:.1f}MB)")
+                if device.type == 'cuda':
+                    print(f"GPU memory: {memory_stats['current_mb']:.1f}MB (peak: {memory_stats['peak_mb']:.1f}MB)")
+                else:
+                    print(f"Memory usage: {memory_stats['current_mb']:.1f}MB (peak: {memory_stats['peak_mb']:.1f}MB)")
                 
                 if losses['val'] < best_val_loss or OUTPUT_SETTINGS["always_save_checkpoint"]:
                     best_val_loss = losses['val']
@@ -243,7 +255,10 @@ def cpu_based_trainer(model, optimizer, device, max_iters, eval_interval, log_in
                 model.train()
                 
                 memory_stats = memory_monitor.get_stats()
-                print(f"Iter {iter_num}: train loss {lossf:.4f}, val loss {val_lossf:.4f}, time {dt*1000:.2f}ms, lr {lr:.2e}, memory {memory_stats['current_mb']:.1f}MB")
+                if device.type == 'cuda':
+                    print(f"Iter {iter_num}: train loss {lossf:.4f}, val loss {val_lossf:.4f}, time {dt*1000:.2f}ms, lr {lr:.2e}, GPU memory {memory_stats['current_mb']:.1f}MB")
+                else:
+                    print(f"Iter {iter_num}: train loss {lossf:.4f}, val loss {val_lossf:.4f}, time {dt*1000:.2f}ms, lr {lr:.2e}, memory {memory_stats['current_mb']:.1f}MB")
             
             iter_num += 1
 
@@ -255,7 +270,7 @@ def cpu_based_trainer(model, optimizer, device, max_iters, eval_interval, log_in
     return train_losses, val_losses, track_tokens_seen
 
 # Train the model
-train_losses, val_losses, tokens_seen = cpu_based_trainer(
+train_losses, val_losses, tokens_seen = gpu_based_trainer(
     model, optimizer, device,
     max_iters=TRAINING_SETTING["max_iters"],
     eval_interval=TRAINING_SETTING["eval_interval"],

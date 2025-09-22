@@ -1,0 +1,9 @@
+torch
+tiktoken
+matplotlib
+tensorflow
+tqdm
+numpy
+pandas
+psutil
+PyYAML
