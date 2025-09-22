@@ -5,7 +5,7 @@ Nanodecoder is meant as a foundation for experimenting, and extending Transforme
 
 ## Feature Comparison
 
-| Feature | CPU | GPU | Mixed + FT32 | DDP | Compile | Full |
+| Feature | CPU | GPU | Mixed + TF32 | DDP | Compile | Full |
 |---------|-----|-----|-------|-----|---------|------|
 | CPU training | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | GPU training | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
