@@ -5,15 +5,14 @@ Nanodecoder is meant as a foundation for experimenting, and extending Transforme
 
 ## Feature Comparison
 
-| Feature | CPU | GPU | Mixed + TF32 | Multi-GPU | Compile | Full |
-|---------|-----|-----|-------|-----|---------|------|
-| CPU training | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| GPU training | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Mixed precision | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
-| Multi-GPU DDP | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ |
-| Model compilation | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ |
-| MoE support | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
-| Wandb logging | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Feature | CPU | GPU | Mixed + TF32 | Multi-GPU + Compile
+|---------|-----|-----|-------|--------------|
+| CPU training | ✅ | ✅ | ✅ | ✅ | 
+| GPU training | ❌ | ✅ | ✅ | ✅ |
+| Mixed precision | ❌ | ❌ | ✅ | ✅ |
+| Multi-GPU DDP | ❌ | ❌ | ❌ | ✅ |
+| Model compilation | ❌ | ❌ | ❌ | ✅ |
+| Wandb logging | ❌ | ❌ | ❌ | ✅ |
 
 If you are using GPU you need following hardware requirements:
 

@@ -44,6 +44,13 @@ device:
   cudnn_allow_tf32_autotune_deterministic_deterministic: false
   nproc_per_node: 1  # Number of processes per node for DDP training (use with torchrun --nproc_per_node=N)
 
+# Model Compilation Settings (PyTorch 2.0+)
+compile:
+  enabled: true  # Enable model compilation for additional speedup
+  mode: "default"  # Compilation mode: "default", "reduce-overhead", "max-autotune"
+  fullgraph: false  # Whether to compile the full graph
+  dynamic: null  # Whether to use dynamic shapes
+
 # Memory Management Settings
 memory:
   enable_memory_pool: true     # Enable memory pooling for tensor reuse
