@@ -5,7 +5,7 @@ Nanodecoder is meant as a foundation for experimenting, and extending Transforme
 
 ## Feature Comparison
 
-| Feature | CPU | GPU | Mixed | DDP | Compile | Full |
+| Feature | CPU | GPU | Mixed + FT32 | DDP | Compile | Full |
 |---------|-----|-----|-------|-----|---------|------|
 | CPU training | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | GPU training | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -15,6 +15,19 @@ Nanodecoder is meant as a foundation for experimenting, and extending Transforme
 | MoE support | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
 | Wandb logging | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
 
+If you are using GPU you need following hardware requirements:
+
+```
+Ampere architecture (2020+):
+# - RTX 30xx series (RTX 3090, 3080, 3070, etc.)
+# - A100, A40, A30
+# - RTX 4090, 4080, 4070
+
+Not supported:
+# - RTX 20xx series
+# - GTX series
+# - Older GPUs
+```
 ## GPT with MoE Architecture
 
 Following image shows the architecture of GPT with MoE:
