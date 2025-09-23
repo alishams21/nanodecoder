@@ -110,4 +110,4 @@ wandb:
   run_name: "moe-gpt-distributed"
   log_interval: 1
 
-run_type: "resume" # "scratch" or "resume"
+run_type: "normal" # "normal" or "resume"

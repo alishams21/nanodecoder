@@ -69,10 +69,13 @@ OPTIMIZER_SETTING = config["optimizer"]
 LR_SCHEDULE_SETTING = config["lr_schedule"]
 DEVICE_SETTING = config["device"]
 MEMORY_SETTING = config["memory"]
+RUN_TYPE = config["run_type"]
 torch.manual_seed(TRAINING_SETTING["seed"])
 
+data_dir = DATA_SETTINGS["dataset"]
+device = torch.device(DEVICE_SETTING["device_type"])
+
 # Mixed precision configuration
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
 dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16'
 
 # -----------------------------------------------------------------------------
@@ -122,7 +125,6 @@ vocab_size = meta_vocab_size if meta_vocab_size is not None else MODEL_SETTING["
 if meta_vocab_size is not None:
     MODEL_SETTING["vocab_size"] = meta_vocab_size
 
-RUN_TYPE = config["run_type"]
 
 if RUN_TYPE=='resume':
     print(f"Resuming training from {OUTPUT_SETTINGS['checkpoint_path']}")
@@ -157,8 +159,6 @@ else:
     optimizer = model.configure_optimizers(OPTIMIZER_SETTING, DEVICE_SETTING["device_type"])
     iter_num = 0
     best_val_loss = 1e9
-    
-    # Apply GPT-2 residual scaling for better initialization (only for new models)
     apply_gpt2_residual_scaling(model, MODEL_SETTING)
 
 # Print detailed model information
@@ -198,8 +198,7 @@ if MEMORY_SETTING["auto_optimize"]:
 
 print(f"Memory optimization settings: {memory_settings}")
 
-# init training state
-iter_num = 0
+
 
 def mixed_precision_gpu_trainer(model, optimizer, device, max_iters, eval_interval, log_interval, 
                                grad_clip, iter_num, best_val_loss, eval_only=False):

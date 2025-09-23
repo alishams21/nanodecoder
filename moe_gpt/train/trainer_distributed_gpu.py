@@ -90,7 +90,11 @@ DEVICE_SETTING = config["device"]
 MEMORY_SETTING = config["memory"]
 COMPILE_SETTING = config.get("compile", {"enabled": True})  # Default to enabled if not specified
 WANDB_SETTING = config.get("wandb")
+RUN_TYPE = config["run_type"]
 torch.manual_seed(TRAINING_SETTING["seed"])
+
+data_dir = DATA_SETTINGS["dataset"]
+device = torch.device(DEVICE_SETTING["device_type"])
 
 # DDP setup
 ddp = int(os.environ.get('RANK', -1)) != -1
@@ -123,7 +127,7 @@ if ddp:
     ddp_rank = int(os.environ['RANK'])
     ddp_local_rank = int(os.environ['LOCAL_RANK'])
     ddp_world_size = int(os.environ['WORLD_SIZE'])
-    device = f'cuda:{ddp_local_rank}'
+    device = torch.device(f'cuda:{ddp_local_rank}')
     torch.cuda.set_device(device)
     master_process = ddp_rank == 0
     seed_offset = ddp_rank
@@ -131,7 +135,7 @@ else:
     master_process = True
     seed_offset = 0
     ddp_world_size = nproc_per_node
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Mixed precision configuration
 dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16'
@@ -191,8 +195,6 @@ vocab_size = meta_vocab_size if meta_vocab_size is not None else MODEL_SETTING["
 if meta_vocab_size is not None:
     MODEL_SETTING["vocab_size"] = meta_vocab_size
 
-RUN_TYPE = config["run_type"]
-
 if RUN_TYPE=='resume':
     if master_process:
         print(f"Resuming training from {OUTPUT_SETTINGS['checkpoint_path']}")
@@ -227,8 +229,6 @@ else:
     optimizer = model.configure_optimizers(OPTIMIZER_SETTING, DEVICE_SETTING["device_type"])
     iter_num = 0
     best_val_loss = 1e9
-    
-    # Apply GPT-2 residual scaling for better initialization (only for new models)
     apply_gpt2_residual_scaling(model, MODEL_SETTING)
 
 # Print detailed model information
@@ -241,7 +241,6 @@ if master_process:
     print("=" * 50)
 
 # Set device
-device = torch.device(device)    
 model.to(device)
 if master_process:
     print(f"Using device: {device}")
@@ -283,7 +282,6 @@ if COMPILE_SETTING.get("enabled", True) and master_process:
     print("Model compilation completed!")
 
 # init training state
-iter_num = 0
 
 # wandb logging setup
 if WANDB_SETTING.get("enabled", False) and master_process:

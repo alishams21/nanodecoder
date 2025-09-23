@@ -63,9 +63,11 @@ OPTIMIZER_SETTING = config["optimizer"]
 LR_SCHEDULE_SETTING = config["lr_schedule"]
 DEVICE_SETTING = config["device"]
 MEMORY_SETTING = config["memory"]  # Add memory settings
+RUN_TYPE = config["run_type"]
 torch.manual_seed(TRAINING_SETTING["seed"])
 
-
+data_dir = DATA_SETTINGS["dataset"]
+device = torch.device(DEVICE_SETTING["device_type"])
 # enable optimizations for GPU
 if DEVICE_SETTING["device_type"] == 'cuda':
     torch.backends.cuda.matmul.allow_tf32 = True
@@ -74,8 +76,6 @@ if DEVICE_SETTING["device_type"] == 'cuda':
 else:
     device_type = 'cpu'
 
-
-data_dir = DATA_SETTINGS["dataset"]
 
 # Create a wrapper function for get_batch with the specific parameters
 def get_batch_wrapper(split):
@@ -95,7 +95,6 @@ vocab_size = meta_vocab_size if meta_vocab_size is not None else MODEL_SETTING["
 # Update vocab_size in MODEL_SETTING if we got it from meta
 if meta_vocab_size is not None:
     MODEL_SETTING["vocab_size"] = meta_vocab_size
-RUN_TYPE = config["run_type"]
 
 if RUN_TYPE=='resume':
     print(f"Resuming training from {OUTPUT_SETTINGS['checkpoint_path']}")
@@ -130,10 +129,8 @@ else:
     optimizer = model.configure_optimizers(OPTIMIZER_SETTING, DEVICE_SETTING["device_type"])
     iter_num = 0
     best_val_loss = 1e9
-    
-    # Apply GPT-2 residual scaling for better initialization (only for new models)
     apply_gpt2_residual_scaling(model, MODEL_SETTING)
-
+    # Apply GPT-2 residual scaling for better initialization (only for new models)
 # Print detailed model information
 print("=" * 50)
 print("MODEL INFORMATION")
@@ -168,8 +165,7 @@ if MEMORY_SETTING["auto_optimize"]:
 
 print(f"Memory optimization settings: {memory_settings}")
 
-# init training state
-iter_num = 0
+
 
 def gpu_based_trainer(model, optimizer, device, max_iters, eval_interval, log_interval, 
                        grad_clip, iter_num, best_val_loss, eval_only=False):
