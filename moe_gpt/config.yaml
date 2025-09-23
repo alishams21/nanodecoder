@@ -30,7 +30,7 @@ model:
   router_z_loss_weight: 0.01 # Router z loss weight
 
 device:
-  device_type: "cuda"
+  device_type: "cpu"
   num_workers: 0
   pin_memory: true
   non_blocking: true
@@ -68,9 +68,9 @@ training:
   batch_size: 8
   weight_decay: 0.1
   seed: 123
-  max_iters: 1000  # Maximum training iterations
-  eval_interval: 100  # Evaluate every N iterations
-  log_interval: 20  # Log every N iterations
+  max_iters: 200  # Maximum training iterations
+  eval_interval: 10  # Evaluate every N iterations
+  log_interval: 5  # Log every N iterations
   eval_iters: 10  # Number of batches per evaluation cycle
   grad_clip: 1.0  # Gradient clipping value
   eval_only: false # Only evaluate the model
@@ -91,21 +91,23 @@ optimizer:
 
 # Data Settings
 data:
-  dataset: "data/shakespeare"
+  dataset: "moe_gpt/data/shakespeare"
   train_ratio: 0.90
   eval_freq: 5
   eval_iter: 1
 
 # Output Settings
 output:
-  model_save_path: "gpt_model.pth"
+  model_save_path: "moe_gpt_model.pth"
   loss_plot_path: "loss.pdf"
   always_save_checkpoint: true
-  checkpoint_path: "gpt_moe/checkpoints"
+  checkpoint_path: "moe_gpt/checkpoints"
 
 # Wandb Logging Settings
 wandb:
   enabled: true
-  project: "nanodecoder-distributed-run"
-  run_name: "gpt-moe-distributed"
+  project: "moe-gpt-distributed-run"
+  run_name: "moe-gpt-distributed"
   log_interval: 1
+
+run_type: "normal" # "normal" or "resume"
