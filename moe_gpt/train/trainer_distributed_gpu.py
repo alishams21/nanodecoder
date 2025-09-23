@@ -6,6 +6,7 @@ This trainer combines the best of all worlds:
 - Mixed precision training from from_scratch_mixed_precision.py
 - Distributed Data Parallel (DDP) from from_scratch_ddp.py
 - Model compilation from from_scratch_compile.py
+- Wandb logging for experiment tracking
 
 FEATURES:
 - Distributed Data Parallel (DDP) for multi-GPU training
@@ -22,6 +23,7 @@ FEATURES:
 - Gradient accumulation for large effective batch sizes
 - Multi-GPU synchronization and coordination
 - PyTorch 2.0 Model Compilation for additional speedup
+- Wandb experiment tracking and logging
 
 REQUIREMENTS:
 - Multiple GPUs: 2+ GPUs for DDP training
@@ -30,6 +32,7 @@ REQUIREMENTS:
 - CUDA: 11.0+ for TF32 operations
 - NCCL: For multi-GPU communication
 - Memory: Sufficient GPU memory for model and batch size per GPU
+- Wandb: For experiment tracking (optional)
 
 SUITABILITY:
 - Best for: Large MoE models, production training, high-throughput scenarios
@@ -73,7 +76,7 @@ from utils.training_utils import load_config, get_lr, get_batch, estimate_loss
 from utils.memory_utils import memory_optimized_training, MemoryMonitor, optimize_memory_settings
 
 import numpy as np
-
+import wandb
 
 # Load configuration
 config = load_config()
@@ -86,6 +89,7 @@ LR_SCHEDULE_SETTING = config["lr_schedule"]
 DEVICE_SETTING = config["device"]
 MEMORY_SETTING = config["memory"]
 COMPILE_SETTING = config.get("compile", {"enabled": True})  # Default to enabled if not specified
+WANDB_SETTING = config.get("wandb")
 torch.manual_seed(TRAINING_SETTING["seed"])
 
 # DDP setup
@@ -151,6 +155,7 @@ if master_process:
     print(f"Configured nproc_per_node: {nproc_per_node}")
     if nproc_per_node > 1:
         print(f"Auto-launch: Will use {nproc_per_node} GPUs when available")
+    print(f"Wandb logging: {WANDB_SETTING.get('enabled', False)}")
     print("=" * 50)
 
 # Enable optimizations for GPU
@@ -247,6 +252,49 @@ if COMPILE_SETTING.get("enabled", True) and master_process:
 # init training state
 iter_num = 0
 
+# wandb logging setup
+if WANDB_SETTING.get("enabled", False) and master_process:
+    try:
+        # Generate run name with timestamp if not specified
+        run_name = WANDB_SETTING.get("run_name")
+        run_name = f"{run_name}-{int(time.time())}"
+        
+        # Create wandb config
+        wandb_config = {
+            'n_layer': MODEL_SETTING['n_blocks'],
+            'n_head': MODEL_SETTING['n_head'], 
+            'n_embd': MODEL_SETTING['n_embd'],
+            'n_exp': MODEL_SETTING.get('n_exp', 0),
+            'top_k': MODEL_SETTING.get('top_k', 1),
+            'use_aux_loss': MODEL_SETTING.get('use_aux_loss', False),
+            'use_router_z_loss': MODEL_SETTING.get('use_router_z_loss', False),
+            'learning_rate': OPTIMIZER_SETTING['learning_rate'],
+            'batch_size': TRAINING_SETTING['batch_size'],
+            'block_size': MODEL_SETTING['max_context_length'],
+            'dtype': dtype,
+            'compile': COMPILE_SETTING.get('enabled', True),
+            'ddp_world_size': ddp_world_size,
+            'accumulation_steps': TRAINING_SETTING.get('accumulation_steps', 1),
+            'grad_clip': TRAINING_SETTING.get('grad_clip', 1.0),
+            'weight_decay': OPTIMIZER_SETTING.get('weight_decay', 0.1),
+            'warmup_iters': LR_SCHEDULE_SETTING.get('warmup_iters', 400),
+            'lr_decay_iters': LR_SCHEDULE_SETTING.get('lr_decay_iters', 700),
+            'min_lr': LR_SCHEDULE_SETTING.get('min_lr', 0.0001),
+        }
+        
+        wandb.init(
+            project=WANDB_SETTING.get("project"),
+            name=run_name,
+            config=wandb_config
+        )
+        print(f"Wandb initialized: {run_name}")
+    except ImportError:
+        print("Warning: wandb not installed. Install with: pip install wandb")
+        WANDB_SETTING["enabled"] = False
+    except Exception as e:
+        print(f"Warning: Failed to initialize wandb: {e}")
+        WANDB_SETTING["enabled"] = False
+
 def distributed_mixed_precision_trainer(model, optimizer, device, max_iters, eval_interval, log_interval, 
                                        grad_clip, accumulation_steps, eval_only=False):
     """
@@ -334,6 +382,22 @@ def distributed_mixed_precision_trainer(model, optimizer, device, max_iters, eva
                     print(f"GPU memory: {memory_stats['current_mb']:.1f}MB (peak: {memory_stats['peak_mb']:.1f}MB)")
                 else:
                     print(f"Memory usage: {memory_stats['current_mb']:.1f}MB (peak: {memory_stats['peak_mb']:.1f}MB)")
+                
+                # wandb logging
+                if WANDB_SETTING.get("enabled", False):
+                    try:
+                        
+                        wandb.log({
+                            "iter": iter_num,
+                            "train/loss": losses['train'],
+                            "val/loss": losses['val'],
+                            "lr": lr,
+                            "gpu_memory_mb": memory_stats['current_mb'],
+                            "peak_memory_mb": memory_stats['peak_mb'],
+                            "tokens_seen": tokens_seen,
+                        })
+                    except Exception as e:
+                        print(f"Warning: Failed to log to wandb: {e}")
                 
                 if losses['val'] < best_val_loss or OUTPUT_SETTINGS["always_save_checkpoint"]:
                     best_val_loss = losses['val']
@@ -479,3 +543,11 @@ if master_process:
 # Clean up DDP
 if ddp:
     destroy_process_group()
+
+# Finish wandb run
+if WANDB_SETTING.get("enabled", False) and master_process:
+    try:
+        wandb.finish()
+        print("Wandb run finished successfully")
+    except Exception as e:
+        print(f"Warning: Failed to finish wandb run: {e}")

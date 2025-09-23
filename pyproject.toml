@@ -31,6 +31,8 @@ dependencies = [
     "pandas",
     "psutil",
     "PyYAML",
+    "wandb",
+    "python-dotenv",
 ]
 
 [project.optional-dependencies]

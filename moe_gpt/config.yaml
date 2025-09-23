@@ -102,3 +102,10 @@ output:
   loss_plot_path: "loss.pdf"
   always_save_checkpoint: true
   checkpoint_path: "gpt_moe/checkpoints"
+
+# Wandb Logging Settings
+wandb:
+  enabled: true
+  project: "nanodecoder-distributed-run"
+  run_name: "gpt-moe-distributed"
+  log_interval: 1
