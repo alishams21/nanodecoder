@@ -102,7 +102,7 @@ else:
 ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
 ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
 
-data_dir = os.path.join('gpt_moe', DATA_SETTINGS["dataset"])
+data_dir = DATA_SETTINGS["dataset"]
 
 # Create a wrapper function for get_batch with the specific parameters
 def get_batch_wrapper(split):
@@ -122,10 +122,44 @@ vocab_size = meta_vocab_size if meta_vocab_size is not None else MODEL_SETTING["
 if meta_vocab_size is not None:
     MODEL_SETTING["vocab_size"] = meta_vocab_size
 
-model = GPT(MODEL_SETTING)
+RUN_TYPE = config["run_type"]
 
-# Apply GPT-2 residual scaling for better initialization
-apply_gpt2_residual_scaling(model, MODEL_SETTING)
+if RUN_TYPE=='resume':
+    print(f"Resuming training from {OUTPUT_SETTINGS['checkpoint_path']}")
+    # resume training from a checkpoint.
+    ckpt_path = os.path.join(OUTPUT_SETTINGS['checkpoint_path'], 'ckpt.pt')
+    checkpoint = torch.load(ckpt_path, map_location=device)
+    checkpoint_model_args = checkpoint['model_args']
+    # force these config attributes to be equal otherwise we can't even resume training
+    # the rest of the attributes (e.g. dropout) can stay as desired from command line
+    for k in ['n_blocks', 'n_head', 'n_embd', 'max_context_length', 'bias', 'vocab_size']:
+        MODEL_SETTING[k] = checkpoint_model_args[k]
+    # create the model
+    model = GPT(MODEL_SETTING)
+    state_dict = checkpoint['model']
+    # fix the keys of the state dictionary :(
+    # honestly no idea how checkpoints sometimes get this prefix, have to debug more
+    # unwanted_prefix = '_orig_mod.'
+    # for k,v in list(state_dict.items()):
+    #     if k.startswith(unwanted_prefix):
+    #         state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
+    model.load_state_dict(state_dict)
+    iter_num = checkpoint['iter_num']
+    best_val_loss = checkpoint['best_val_loss']
+    
+    # Create optimizer and load its state if available
+    optimizer = model.configure_optimizers(OPTIMIZER_SETTING, DEVICE_SETTING["device_type"])
+    if 'optimizer' in checkpoint:
+        optimizer.load_state_dict(checkpoint['optimizer'])
+else:
+    # create a new model from scratch
+    model = GPT(MODEL_SETTING)
+    optimizer = model.configure_optimizers(OPTIMIZER_SETTING, DEVICE_SETTING["device_type"])
+    iter_num = 0
+    best_val_loss = 1e9
+    
+    # Apply GPT-2 residual scaling for better initialization (only for new models)
+    apply_gpt2_residual_scaling(model, MODEL_SETTING)
 
 # Print detailed model information
 print("=" * 50)
@@ -134,8 +168,6 @@ print("=" * 50)
 print_model_info(model, non_embedding=True)
 print(f"Model created with {get_num_params(model)/1e6:.2f}M parameters")
 print("=" * 50)
-
-optimizer = model.configure_optimizers(OPTIMIZER_SETTING, DEVICE_SETTING["device_type"])
 
 # Set device
 device = torch.device(DEVICE_SETTING["device_type"])    
@@ -170,7 +202,7 @@ print(f"Memory optimization settings: {memory_settings}")
 iter_num = 0
 
 def mixed_precision_gpu_trainer(model, optimizer, device, max_iters, eval_interval, log_interval, 
-                               grad_clip, eval_only=False):
+                               grad_clip, iter_num, best_val_loss, eval_only=False):
     """
     Train the model with mixed precision and GPU optimizations.
     
@@ -192,8 +224,6 @@ def mixed_precision_gpu_trainer(model, optimizer, device, max_iters, eval_interv
     # Initialize tracking lists
     train_losses, val_losses, track_tokens_seen = [], [], []
     tokens_seen = 0
-    iter_num = 0
-    best_val_loss = TRAINING_SETTING["best_val_loss"]
     
     # Create checkpoint directory
     os.makedirs(OUTPUT_SETTINGS["checkpoint_path"], exist_ok=True)
@@ -311,6 +341,8 @@ train_losses, val_losses, tokens_seen = mixed_precision_gpu_trainer(
     eval_interval=TRAINING_SETTING["eval_interval"],
     log_interval=TRAINING_SETTING["log_interval"],
     grad_clip=TRAINING_SETTING["grad_clip"],
+    iter_num=iter_num,
+    best_val_loss=best_val_loss,
     eval_only=TRAINING_SETTING["eval_only"]
 )
 
