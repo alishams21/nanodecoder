@@ -1,10 +1,12 @@
 """
-Distributed Mixed Precision GPU-Optimized GPT Trainer for MoE Models
+Distributed Mixed Precision GPU-Optimized GPT Trainer for MoE Models with Model Compilation
 
 This trainer combines the best of all worlds:
 - Advanced GPU optimizations from trainer_on_gpu.py
 - Mixed precision training from from_scratch_mixed_precision.py
 - Distributed Data Parallel (DDP) from from_scratch_ddp.py
+- Model compilation from from_scratch_compile.py
+- Wandb logging for experiment tracking
 
 FEATURES:
 - Distributed Data Parallel (DDP) for multi-GPU training
@@ -20,21 +22,25 @@ FEATURES:
 - Comprehensive memory monitoring
 - Gradient accumulation for large effective batch sizes
 - Multi-GPU synchronization and coordination
+- PyTorch 2.0 Model Compilation for additional speedup
+- Wandb experiment tracking and logging
 
 REQUIREMENTS:
 - Multiple GPUs: 2+ GPUs for DDP training
 - GPU: Ampere architecture (RTX 30xx, A100, etc.) for TF32 support
-- PyTorch: 1.7+ for TF32 compatibility and mixed precision
+- PyTorch: 2.0+ for model compilation support
 - CUDA: 11.0+ for TF32 operations
 - NCCL: For multi-GPU communication
 - Memory: Sufficient GPU memory for model and batch size per GPU
+- Wandb: For experiment tracking (optional)
 
 SUITABILITY:
 - Best for: Large MoE models, production training, high-throughput scenarios
 - Memory: Optimized for GPU memory management with mixed precision
-- Performance: ~1.5x speedup over standard FP32 training + memory savings from mixed precision + linear scaling with GPUs
+- Performance: ~1.5x speedup over standard FP32 training + memory savings from mixed precision + linear scaling with GPUs + additional compilation speedup
 - Accuracy: ~99.9% accuracy retention with TF32 + mixed precision optimizations
 - Scalability: Linear scaling with number of GPUs (2x GPUs = ~2x speed)
+- Compilation: Additional 1.2-1.5x speedup from PyTorch 2.0 compilation
 
 NOT SUITABLE FOR:
 - CPU-only environments (use trainer_on_cpu.py instead)
@@ -42,9 +48,12 @@ NOT SUITABLE FOR:
 - TPU training (requires different optimizations)
 - Older GPUs without TF32 support
 - Memory-constrained environments without multiple GPUs
+- PyTorch < 2.0 (compilation requires PyTorch 2.0+)
 """
 
 import torch
+import torch._dynamo
+torch._dynamo.config.suppress_errors = True
 import tiktoken
 import matplotlib.pyplot as plt
 import yaml
@@ -67,7 +76,7 @@ from utils.training_utils import load_config, get_lr, get_batch, estimate_loss
 from utils.memory_utils import memory_optimized_training, MemoryMonitor, optimize_memory_settings
 
 import numpy as np
-
+import wandb
 
 # Load configuration
 config = load_config()
@@ -79,6 +88,8 @@ OPTIMIZER_SETTING = config["optimizer"]
 LR_SCHEDULE_SETTING = config["lr_schedule"]
 DEVICE_SETTING = config["device"]
 MEMORY_SETTING = config["memory"]
+COMPILE_SETTING = config.get("compile", {"enabled": True})  # Default to enabled if not specified
+WANDB_SETTING = config.get("wandb")
 torch.manual_seed(TRAINING_SETTING["seed"])
 
 # DDP setup
@@ -128,7 +139,7 @@ dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported
 # -----------------------------------------------------------------------------
 if master_process:
     print("=" * 50)
-    print("DISTRIBUTED MIXED PRECISION GPU TRAINING SCRIPT")
+    print("DISTRIBUTED MIXED PRECISION GPU TRAINING SCRIPT WITH COMPILATION")
     print("=" * 50)
     print(f"Device: {device}")
     print(f"CUDA available: {torch.cuda.is_available()}")
@@ -137,12 +148,14 @@ if master_process:
         print(f"CUDA memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
         print(f"BF16 supported: {torch.cuda.is_bf16_supported()}")
     print(f"Data type: {dtype}")
+    print(f"Model compilation: {COMPILE_SETTING.get('enabled', True)}")
     print(f"Batch size: {TRAINING_SETTING['batch_size']}")
     print(f"Model size: {MODEL_SETTING['n_blocks']} layers, {MODEL_SETTING['n_head']} heads, {MODEL_SETTING['n_embd']} embd")
     print(f"DDP world size: {ddp_world_size}")
     print(f"Configured nproc_per_node: {nproc_per_node}")
     if nproc_per_node > 1:
         print(f"Auto-launch: Will use {nproc_per_node} GPUs when available")
+    print(f"Wandb logging: {WANDB_SETTING.get('enabled', False)}")
     print("=" * 50)
 
 # Enable optimizations for GPU
@@ -229,11 +242,61 @@ if master_process:
 if ddp:
     model = DDP(model, device_ids=[ddp_local_rank])
 
+# Compile the model for faster training (PyTorch 2.0+)
+if COMPILE_SETTING.get("enabled", True) and master_process:
+    print("Compiling the model... (takes a ~minute)")
+    unoptimized_model = model
+    model = torch.compile(model)  # requires PyTorch 2.0
+    print("Model compilation completed!")
+
 # init training state
 iter_num = 0
 
+# wandb logging setup
+if WANDB_SETTING.get("enabled", False) and master_process:
+    try:
+        # Generate run name with timestamp if not specified
+        run_name = WANDB_SETTING.get("run_name")
+        run_name = f"{run_name}-{int(time.time())}"
+        
+        # Create wandb config
+        wandb_config = {
+            'n_layer': MODEL_SETTING['n_blocks'],
+            'n_head': MODEL_SETTING['n_head'], 
+            'n_embd': MODEL_SETTING['n_embd'],
+            'n_exp': MODEL_SETTING.get('n_exp', 0),
+            'top_k': MODEL_SETTING.get('top_k', 1),
+            'use_aux_loss': MODEL_SETTING.get('use_aux_loss', False),
+            'use_router_z_loss': MODEL_SETTING.get('use_router_z_loss', False),
+            'learning_rate': OPTIMIZER_SETTING['learning_rate'],
+            'batch_size': TRAINING_SETTING['batch_size'],
+            'block_size': MODEL_SETTING['max_context_length'],
+            'dtype': dtype,
+            'compile': COMPILE_SETTING.get('enabled', True),
+            'ddp_world_size': ddp_world_size,
+            'accumulation_steps': TRAINING_SETTING.get('accumulation_steps', 1),
+            'grad_clip': TRAINING_SETTING.get('grad_clip', 1.0),
+            'weight_decay': OPTIMIZER_SETTING.get('weight_decay', 0.1),
+            'warmup_iters': LR_SCHEDULE_SETTING.get('warmup_iters', 400),
+            'lr_decay_iters': LR_SCHEDULE_SETTING.get('lr_decay_iters', 700),
+            'min_lr': LR_SCHEDULE_SETTING.get('min_lr', 0.0001),
+        }
+        
+        wandb.init(
+            project=WANDB_SETTING.get("project"),
+            name=run_name,
+            config=wandb_config
+        )
+        print(f"Wandb initialized: {run_name}")
+    except ImportError:
+        print("Warning: wandb not installed. Install with: pip install wandb")
+        WANDB_SETTING["enabled"] = False
+    except Exception as e:
+        print(f"Warning: Failed to initialize wandb: {e}")
+        WANDB_SETTING["enabled"] = False
+
 def distributed_mixed_precision_trainer(model, optimizer, device, max_iters, eval_interval, log_interval, 
-                                       grad_clip, eval_only=False, accumulation_steps=1):
+                                       grad_clip, accumulation_steps, eval_only=False):
     """
     Train the model with distributed mixed precision and GPU optimizations.
     
@@ -277,8 +340,8 @@ def distributed_mixed_precision_trainer(model, optimizer, device, max_iters, eva
     
     if master_process:
         print("Starting distributed mixed precision training...")
-        if accumulation_steps > 1:
-            print(f"Gradient accumulation enabled: {accumulation_steps} steps")
+        if accumulation_steps_per_process > 1:
+            print(f"Gradient accumulation enabled: {accumulation_steps_per_process} steps")
             print(f"Per-process accumulation steps: {accumulation_steps_per_process}")
             print(f"Effective batch size: {TRAINING_SETTING['batch_size'] * accumulation_steps * ddp_world_size}")
             if ddp:
@@ -320,6 +383,22 @@ def distributed_mixed_precision_trainer(model, optimizer, device, max_iters, eva
                 else:
                     print(f"Memory usage: {memory_stats['current_mb']:.1f}MB (peak: {memory_stats['peak_mb']:.1f}MB)")
                 
+                # wandb logging
+                if WANDB_SETTING.get("enabled", False):
+                    try:
+                        
+                        wandb.log({
+                            "iter": iter_num,
+                            "train/loss": losses['train'],
+                            "val/loss": losses['val'],
+                            "lr": lr,
+                            "gpu_memory_mb": memory_stats['current_mb'],
+                            "peak_memory_mb": memory_stats['peak_mb'],
+                            "tokens_seen": tokens_seen,
+                        })
+                    except Exception as e:
+                        print(f"Warning: Failed to log to wandb: {e}")
+                
                 if losses['val'] < best_val_loss or OUTPUT_SETTINGS["always_save_checkpoint"]:
                     best_val_loss = losses['val']
                     if iter_num > 0:
@@ -334,6 +413,7 @@ def distributed_mixed_precision_trainer(model, optimizer, device, max_iters, eva
                             'memory_stats': memory_stats,
                             'dtype': dtype,  # Save mixed precision dtype
                             'ddp_world_size': ddp_world_size,  # Save DDP info
+                            'compiled': COMPILE_SETTING.get("enabled", True),  # Save compilation info
                         }
                         print(f"Saving checkpoint to {OUTPUT_SETTINGS['checkpoint_path']}")
                         torch.save(checkpoint, os.path.join(OUTPUT_SETTINGS["checkpoint_path"], 'ckpt.pt'))
@@ -401,10 +481,11 @@ def distributed_mixed_precision_trainer(model, optimizer, device, max_iters, eva
                 model.train()
                 
                 memory_stats = memory_monitor.get_stats()
+                compile_status = "compiled" if COMPILE_SETTING.get("enabled", True) else "uncompiled"
                 if device.type == 'cuda':
-                    print(f"Iter {iter_num}: train loss {lossf:.4f}, val loss {val_lossf:.4f}, time {dt*1000:.2f}ms, lr {lr:.2e}, GPU memory {memory_stats['current_mb']:.1f}MB, dtype {dtype}, world_size {ddp_world_size}")
+                    print(f"Iter {iter_num}: train loss {lossf:.4f}, val loss {val_lossf:.4f}, time {dt*1000:.2f}ms, lr {lr:.2e}, GPU memory {memory_stats['current_mb']:.1f}MB, dtype {dtype}, world_size {ddp_world_size}, {compile_status}")
                 else:
-                    print(f"Iter {iter_num}: train loss {lossf:.4f}, val loss {val_lossf:.4f}, time {dt*1000:.2f}ms, lr {lr:.2e}, memory {memory_stats['current_mb']:.1f}MB, dtype {dtype}, world_size {ddp_world_size}")
+                    print(f"Iter {iter_num}: train loss {lossf:.4f}, val loss {val_lossf:.4f}, time {dt*1000:.2f}ms, lr {lr:.2e}, memory {memory_stats['current_mb']:.1f}MB, dtype {dtype}, world_size {ddp_world_size}, {compile_status}")
             
             iter_num += 1
 
@@ -452,11 +533,21 @@ if master_process:
         "dtype": dtype,  # Save mixed precision dtype
         "scaler_state": scaler.state_dict(),  # Save scaler state for resuming
         "ddp_world_size": ddp_world_size,  # Save DDP info
+        "compiled": COMPILE_SETTING.get("enabled", True),  # Save compilation info
     }, OUTPUT_SETTINGS["model_save_path"])
     print(f"Final model saved to {OUTPUT_SETTINGS['model_save_path']}")
     print(f"Final memory stats: {final_memory_stats}")
-    print(f"Training completed with mixed precision dtype: {dtype} and {ddp_world_size} GPUs")
+    compile_status = "compiled" if COMPILE_SETTING.get("enabled", True) else "uncompiled"
+    print(f"Training completed with mixed precision dtype: {dtype}, {ddp_world_size} GPUs, and {compile_status} model")
 
 # Clean up DDP
 if ddp:
     destroy_process_group()
+
+# Finish wandb run
+if WANDB_SETTING.get("enabled", False) and master_process:
+    try:
+        wandb.finish()
+        print("Wandb run finished successfully")
+    except Exception as e:
+        print(f"Warning: Failed to finish wandb run: {e}")

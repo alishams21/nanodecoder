@@ -16,6 +16,32 @@ Here you can find internal implementation of GPT. It is designed to illustrate t
 
 5- Output Projection & Softmax – map hidden states back to vocabulary space for prediction.
 
+## Quick start
+
+To train your model, you can run following command. Data sample of shakespeare.txt is given for now under ```/gpt/data/train_data/shakespeare.txt``` . You can change your data source based on requirements:
+
+```bash
+uv run python dense_gpt/train/gpt_train.py
+``` 
+To load weights from trained models you can use following command
+
+```bash
+uv run python dense_gpt/wight_loader/gpt2_weights_evaluator.py
+```
+
+To fine-tune the model, 2 fine-tuning examples is considered you can extend on that. First is for simple ham/spam classification fine tuner. Other is instruction following fine-tuner, again you can change the finetuning head and data based on your needs:
+
+``` bash
+uv run python dense_gpt/fine_tuning/instruction_head_fine_tuning/instruction_head_find_tuner.py
+```
+
+```bash
+uv run python dense_gpt/fine_tuning/spam_head_fine_tuning/spam_head_fine_tuner.py
+```
+
+
+
+
 
 ### Tokenizer Sample: 
 
