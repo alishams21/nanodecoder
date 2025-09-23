@@ -33,9 +33,7 @@ For TPU training, consider creating a separate trainer_on_tpu.py with XLA optimi
 """
 
 import torch
-import tiktoken
 import matplotlib.pyplot as plt
-import yaml
 import sys
 import os
 import pickle
@@ -51,7 +49,6 @@ from utils.initialization_utils import apply_gpt2_residual_scaling
 from utils.params_util import print_model_info, get_num_params
 from utils.memory_utils import memory_optimized_training, MemoryMonitor, optimize_memory_settings
 
-import numpy as np
 
 
 # Load configuration

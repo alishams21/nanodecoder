@@ -37,14 +37,11 @@ NOT SUITABLE FOR:
 """
 
 import torch
-import tiktoken
 import matplotlib.pyplot as plt
-import yaml
 import sys
 import os
 import pickle
 import time
-import math
 from contextlib import nullcontext
 # Add the src directory to the Python path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -56,7 +53,6 @@ from utils.params_util import print_model_info, get_num_params
 from utils.training_utils import load_config, get_lr, get_batch, estimate_loss
 from utils.memory_utils import memory_optimized_training, MemoryMonitor, optimize_memory_settings
 
-import numpy as np
 
 
 # Load configuration

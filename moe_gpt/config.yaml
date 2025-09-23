@@ -1,18 +1,18 @@
 # GPT Model Configuration
 model:
   vocab_size: 50257
-  max_context_length: 256  # Shortened context length (orig: 1024)
-  n_embd: 768             # Embedding dimension
-  n_head: 12             # Number of attention heads
-  n_blocks: 12            # Number of layers
+  max_context_length: 1024  # Increased for OpenWebText (better context understanding)
+  n_embd: 768              # Embedding dimension (divisible by n_head)
+  n_head: 12              # Increased attention heads for better representation
+  n_blocks: 12            # Increased layers for larger dataset capacity
   drop_rate: 0.1          # Dropout rate
   qkv_bias: false         # Query-key-value bias
-  n_exp: 2                # Number of experts
-  top_k: 1                # Top k experts
+  n_exp: 8                # Increased experts for larger dataset diversity
+  top_k: 2                # Top k experts (increased for better routing)
   use_noisy_top_k: true   # Use noisy top k
-  capacity_factor: 1.25   # Capacity factor
+  capacity_factor: 1.5    # Increased capacity factor for larger batches
   bias: false             # Bias
-  dropout: 0.2            # Dropout rate
+  dropout: 0.1            # Reduced dropout for larger dataset
   flash_self_attention: false # for faster self-attention
   use_switch_tfm_init: true # Use switch transformer-style initialization
   switch_tfm_init_scale: 1.0 # Switch transformer-style initialization scale
@@ -30,8 +30,8 @@ model:
   router_z_loss_weight: 0.01 # Router z loss weight
 
 device:
-  device_type: "cpu"
-  num_workers: 0
+  device_type: "cuda"  # Changed to cuda for GPU training
+  num_workers: 4
   pin_memory: true
   non_blocking: true
   tf32: true
@@ -42,7 +42,7 @@ device:
   cudnn_allow_tf32_autotune: true
   cudnn_allow_tf32_autotune_deterministic: false
   cudnn_allow_tf32_autotune_deterministic_deterministic: false
-  nproc_per_node: 1  # Number of processes per node for DDP training (use with torchrun --nproc_per_node=N)
+  nproc_per_node: 8  # Number of processes per node for DDP training (use with torchrun --nproc_per_node=N)
 
 # Model Compilation Settings (PyTorch 2.0+)
 compile:
@@ -54,44 +54,44 @@ compile:
 # Memory Management Settings
 memory:
   enable_memory_pool: true     # Enable memory pooling for tensor reuse
-  buffer_size: 2              # Number of batches to prefetch (2-4 recommended)
-  max_pool_size: 4            # Maximum number of tensors to keep in memory pool
+  buffer_size: 4              # Increased for larger dataset (4-8 recommended)
+  max_pool_size: 8            # Increased maximum pool size for larger model
   enable_prefetching: true     # Enable background batch prefetching
-  prefetch_timeout: 5.0        # Timeout for prefetch operations (seconds)
+  prefetch_timeout: 10.0       # Increased timeout for larger batches
   memory_monitoring: true     # Enable memory usage monitoring
   auto_optimize: true         # Automatically optimize settings based on hardware
 
 # Training Settings
 training:
-  learning_rate: 0.0005  # 5e-4
-  num_epochs: 10
-  batch_size: 8
+  learning_rate: 0.0003  # Reduced for larger model and dataset
+  num_epochs: 3  # Reduced epochs for large dataset
+  batch_size: 8  # Increased batch size for multi-GPU (8 GPUs * 8 batch = 64 effective)
   weight_decay: 0.1
   seed: 123
-  max_iters: 200  # Maximum training iterations
-  eval_interval: 10  # Evaluate every N iterations
-  log_interval: 5  # Log every N iterations
-  eval_iters: 10  # Number of batches per evaluation cycle
+  max_iters: 100000  # Increased iterations for OpenWebText dataset
+  eval_interval: 2000  # Evaluate every N iterations
+  log_interval: 1000  # Log every N iterations
+  eval_iters: 20  # Number of batches per evaluation cycle
   grad_clip: 1.0  # Gradient clipping value
   eval_only: false # Only evaluate the model
   best_val_loss: 1000 # Best validation loss this is for initialisation
-  accumulation_steps: 4  # number of gradient accumulation steps each individual GPU performs (1 = no accumulation)
+  accumulation_steps: 4  # Reduced accumulation for multi-GPU (8 GPUs * 8 batch * 4 acc = 256 effective)
 
 # Learning Rate Schedule Settings
 lr_schedule:
   decay_lr: true  # Enable learning rate decay
-  warmup_iters: 400  # Warmup iterations
-  lr_decay_iters: 700  # Learning rate decay iterations
-  min_lr: 0.0001  # Minimum learning rate (1e-4)
+  warmup_iters: 10000  # Increased warmup for larger model
+  lr_decay_iters: 40000  # Increased decay iterations for longer training
+  min_lr: 0.00005  # Lower minimum learning rate for fine-tuning
 
 optimizer:
   weight_decay: 0.1
-  learning_rate: 0.0005
+  learning_rate: 0.0003  # Match training learning rate
   betas: [0.9, 0.95]
 
 # Data Settings
 data:
-  dataset: "moe_gpt/data/shakespeare"
+  dataset: "moe_gpt/data/openwebtext"  # Use OpenWebText for full training
   train_ratio: 0.90
   eval_freq: 5
   eval_iter: 1

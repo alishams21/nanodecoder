@@ -74,8 +74,6 @@ from utils.initialization_utils import apply_gpt2_residual_scaling
 from utils.params_util import print_model_info, get_num_params
 from utils.training_utils import load_config, get_lr, get_batch, estimate_loss
 from utils.memory_utils import memory_optimized_training, MemoryMonitor, optimize_memory_settings
-
-import numpy as np
 import wandb
 
 # Load configuration
