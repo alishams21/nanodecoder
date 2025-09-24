@@ -23,7 +23,7 @@ Nanodecoder currently implements two different types of LLM architectures:
    | Mixed precision | ❌ | ❌ | ✅ | ✅ |
    | Multi-GPU DDP | ❌ | ❌ | ❌ | ✅ |
    | Model compilation | ❌ | ❌ | ❌ | ✅ |
-   | Wandb logging | ❌ | ❌ | ❌ | ✅ |
+   | Wandb logging | ✅ | ✅ | ✅ | ✅ |
 
 
 - **If you are using GPU you need to consider following hardware requirements:**
