@@ -52,6 +52,8 @@ from utils.initialization_utils import apply_gpt2_residual_scaling
 from utils.params_util import print_model_info, get_num_params
 from utils.training_utils import load_config, get_lr, get_batch, estimate_loss
 from utils.memory_utils import memory_optimized_training, MemoryMonitor, optimize_memory_settings
+from utils.hellaswag_evaluator import HellaSwagEvalLoader, evaluate_hellaswag, download_hellaswag_data
+import wandb
 
 
 
@@ -65,6 +67,8 @@ OPTIMIZER_SETTING = config["optimizer"]
 LR_SCHEDULE_SETTING = config["lr_schedule"]
 DEVICE_SETTING = config["device"]
 MEMORY_SETTING = config["memory"]
+HELLASWAG_SETTING = config["hellaswag"]  # Add HellaSwag settings
+WANDB_SETTING = config.get("wandb")  # Add wandb settings
 RUN_TYPE = config["run_type"]
 torch.manual_seed(TRAINING_SETTING["seed"])
 
@@ -163,6 +167,7 @@ print("MODEL INFORMATION")
 print("=" * 50)
 print_model_info(model, non_embedding=True)
 print(f"Model created with {get_num_params(model)/1e6:.2f}M parameters")
+print(f"Wandb logging: {WANDB_SETTING.get('enabled', False)}")
 print("=" * 50)
 
 # Set device
@@ -194,10 +199,95 @@ if MEMORY_SETTING["auto_optimize"]:
 
 print(f"Memory optimization settings: {memory_settings}")
 
+# Initialize HellaSwag evaluation if enabled
+hellaswag_eval_loader = None
+if HELLASWAG_SETTING["enabled"]:
+    print("Setting up HellaSwag evaluation...")
+    
+    # Check if data exists, download if needed
+    hellaswag_data_path = HELLASWAG_SETTING["data_path"]
+    if not os.path.exists(hellaswag_data_path):
+        if HELLASWAG_SETTING["download_data"]:
+            print(f"HellaSwag data not found at {hellaswag_data_path}")
+            print("Downloading HellaSwag data...")
+            try:
+                download_hellaswag_data(os.path.dirname(hellaswag_data_path))
+                print(f"HellaSwag data downloaded to {hellaswag_data_path}")
+            except Exception as e:
+                print(f"Failed to download HellaSwag data: {e}")
+                print("Disabling HellaSwag evaluation")
+                HELLASWAG_SETTING["enabled"] = False
+        else:
+            print(f"HellaSwag data not found at {hellaswag_data_path}")
+            print("Disabling HellaSwag evaluation")
+            HELLASWAG_SETTING["enabled"] = False
+    
+    if HELLASWAG_SETTING["enabled"]:
+        try:
+            hellaswag_eval_loader = HellaSwagEvalLoader(
+                data_file=hellaswag_data_path,
+                batch_size=HELLASWAG_SETTING["batch_size"],
+                seq_len=MODEL_SETTING["max_context_length"],
+                process_rank=0,
+                num_processes=1
+            )
+            print(f"HellaSwag evaluation ready: {hellaswag_eval_loader.num_examples} examples")
+        except Exception as e:
+            print(f"Failed to initialize HellaSwag evaluation: {e}")
+            print("Disabling HellaSwag evaluation")
+            HELLASWAG_SETTING["enabled"] = False
+            hellaswag_eval_loader = None
+
+# wandb logging setup
+if WANDB_SETTING.get("enabled", False):
+    try:
+        # Generate run name with timestamp if not specified
+        run_name = WANDB_SETTING.get("run_name")
+        if run_name:
+            run_name = f"{run_name}-{int(time.time())}"
+        else:
+            run_name = f"mixed-precision-training-{int(time.time())}"
+        
+        # Create wandb config
+        wandb_config = {
+            'n_layer': MODEL_SETTING['n_blocks'],
+            'n_head': MODEL_SETTING['n_head'], 
+            'n_embd': MODEL_SETTING['n_embd'],
+            'n_exp': MODEL_SETTING.get('n_exp', 0),
+            'top_k': MODEL_SETTING.get('top_k', 1),
+            'use_aux_loss': MODEL_SETTING.get('use_aux_loss', False),
+            'use_router_z_loss': MODEL_SETTING.get('use_router_z_loss', False),
+            'learning_rate': OPTIMIZER_SETTING['learning_rate'],
+            'batch_size': TRAINING_SETTING['batch_size'],
+            'block_size': MODEL_SETTING['max_context_length'],
+            'device': DEVICE_SETTING["device_type"],
+            'dtype': dtype,
+            'accumulation_steps': TRAINING_SETTING.get('accumulation_steps', 1),
+            'grad_clip': TRAINING_SETTING.get('grad_clip', 1.0),
+            'weight_decay': OPTIMIZER_SETTING.get('weight_decay', 0.1),
+            'warmup_iters': LR_SCHEDULE_SETTING.get('warmup_iters', 400),
+            'lr_decay_iters': LR_SCHEDULE_SETTING.get('lr_decay_iters', 700),
+            'min_lr': LR_SCHEDULE_SETTING.get('min_lr', 0.0001),
+            'hellaswag_enabled': HELLASWAG_SETTING.get("enabled", False),
+            'hellaswag_eval_interval': HELLASWAG_SETTING.get("eval_interval", 0),
+        }
+        
+        wandb.init(
+            project=WANDB_SETTING.get("project"),
+            name=run_name,
+            config=wandb_config
+        )
+        print(f"Wandb initialized: {run_name}")
+    except ImportError:
+        print("Warning: wandb not installed. Install with: pip install wandb")
+        WANDB_SETTING["enabled"] = False
+    except Exception as e:
+        print(f"Warning: Failed to initialize wandb: {e}")
+        WANDB_SETTING["enabled"] = False
 
 
 def mixed_precision_gpu_trainer(model, optimizer, device, max_iters, eval_interval, log_interval, 
-                               grad_clip, iter_num, best_val_loss, eval_only=False):
+                               grad_clip, iter_num, best_val_loss, eval_only=False, checkpoint_interval=None):
     """
     Train the model with mixed precision and GPU optimizations.
     
@@ -218,6 +308,7 @@ def mixed_precision_gpu_trainer(model, optimizer, device, max_iters, eval_interv
     """
     # Initialize tracking lists
     train_losses, val_losses, track_tokens_seen = [], [], []
+    hellaswag_accuracies = []  # Track HellaSwag accuracy over time
     tokens_seen = 0
     
     # Create checkpoint directory
@@ -249,17 +340,63 @@ def mixed_precision_gpu_trainer(model, optimizer, device, max_iters, eval_interv
                 val_losses.append(losses['val'])
                 track_tokens_seen.append(tokens_seen)
                 
+                # HellaSwag evaluation
+                hellaswag_accuracy = None
+                if (HELLASWAG_SETTING["enabled"] and 
+                    HELLASWAG_SETTING["eval_interval"] > 0 and 
+                    iter_num % HELLASWAG_SETTING["eval_interval"] == 0 and
+                    hellaswag_eval_loader is not None):
+                    print("Running HellaSwag evaluation...")
+                    try:
+                        # Use only 2 batches for quick evaluation (similar to loss evaluation)
+                        # random_sample=True ensures different questions each time
+                        hellaswag_accuracy = evaluate_hellaswag(
+                            model, hellaswag_eval_loader, 
+                            HELLASWAG_SETTING["batch_size"], 
+                            MODEL_SETTING["max_context_length"], 
+                            DEVICE_SETTING["device_type"],
+                            max_batches=2,  # Just 2 batches
+                            random_sample=True  # Random sample each time
+                        )
+                        print(f"HellaSwag accuracy: {hellaswag_accuracy:.4f}")
+                        hellaswag_accuracies.append(hellaswag_accuracy)  # Track accuracy
+                    except Exception as e:
+                        print(f"HellaSwag evaluation failed: {e}")
+                        hellaswag_accuracy = None
+                        hellaswag_accuracies.append(None)
+                
                 # Update memory monitoring
                 memory_monitor.update_peak()
                 memory_stats = memory_monitor.get_stats()
                 
                 print(f"Step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+                if hellaswag_accuracy is not None:
+                    print(f"HellaSwag accuracy: {hellaswag_accuracy:.4f}")
                 if device.type == 'cuda':
                     print(f"GPU memory: {memory_stats['current_mb']:.1f}MB (peak: {memory_stats['peak_mb']:.1f}MB)")
                 else:
                     print(f"Memory usage: {memory_stats['current_mb']:.1f}MB (peak: {memory_stats['peak_mb']:.1f}MB)")
                 
-                if losses['val'] < best_val_loss or OUTPUT_SETTINGS["always_save_checkpoint"]:
+                # wandb logging
+                if WANDB_SETTING.get("enabled", False):
+                    try:
+                        log_data = {
+                            "iter": iter_num,
+                            "train/loss": losses['train'],
+                            "val/loss": losses['val'],
+                            "lr": lr,
+                            "gpu_memory_mb": memory_stats['current_mb'],
+                            "peak_memory_mb": memory_stats['peak_mb'],
+                            "tokens_seen": tokens_seen,
+                            "dtype": dtype,
+                        }
+                        if hellaswag_accuracy is not None:
+                            log_data["hellaswag/accuracy"] = hellaswag_accuracy
+                        wandb.log(log_data)
+                    except Exception as e:
+                        print(f"Warning: Failed to log to wandb: {e}")
+                
+                if iter_num % checkpoint_interval == 0:
                     best_val_loss = losses['val']
                     if iter_num > 0:
                         checkpoint = {
@@ -271,6 +408,8 @@ def mixed_precision_gpu_trainer(model, optimizer, device, max_iters, eval_interv
                             'memory_stats': memory_stats,
                             'dtype': dtype,  # Save mixed precision dtype
                         }
+                        if hellaswag_accuracy is not None:
+                            checkpoint['hellaswag_accuracy'] = hellaswag_accuracy
                         print(f"Saving checkpoint to {OUTPUT_SETTINGS['checkpoint_path']}")
                         torch.save(checkpoint, os.path.join(OUTPUT_SETTINGS["checkpoint_path"], 'ckpt.pt'))
             
@@ -327,10 +466,10 @@ def mixed_precision_gpu_trainer(model, optimizer, device, max_iters, eval_interv
                 break
 
     print("Mixed precision training completed!")
-    return train_losses, val_losses, track_tokens_seen
+    return train_losses, val_losses, track_tokens_seen, hellaswag_accuracies
 
 # Train the model
-train_losses, val_losses, tokens_seen = mixed_precision_gpu_trainer(
+train_losses, val_losses, tokens_seen, hellaswag_accuracies = mixed_precision_gpu_trainer(
     model, optimizer, device,
     max_iters=TRAINING_SETTING["max_iters"],
     eval_interval=TRAINING_SETTING["eval_interval"],
@@ -338,31 +477,67 @@ train_losses, val_losses, tokens_seen = mixed_precision_gpu_trainer(
     grad_clip=TRAINING_SETTING["grad_clip"],
     iter_num=iter_num,
     best_val_loss=best_val_loss,
-    eval_only=TRAINING_SETTING["eval_only"]
+    eval_only=TRAINING_SETTING["eval_only"],
+    checkpoint_interval=TRAINING_SETTING["checkpoint_interval"]
 )
 
 # Plot the training results
 if len(train_losses) > 0:
     print("Generating loss plot...")
     iterations_tensor = torch.linspace(0, TRAINING_SETTING["max_iters"], len(train_losses))
-    plot_losses(iterations_tensor, tokens_seen, train_losses, val_losses)
+    plot_losses(iterations_tensor, tokens_seen, train_losses, val_losses, hellaswag_accuracies)
     plt.savefig(OUTPUT_SETTINGS["loss_plot_path"])
     print(f"Loss plot saved to {OUTPUT_SETTINGS['loss_plot_path']}")
 
 # Save final model
 print("Saving final model...")
 final_memory_stats = memory_monitor.get_stats()
-torch.save({
+
+# Run final HellaSwag evaluation if enabled
+final_hellaswag_accuracy = None
+if (HELLASWAG_SETTING["enabled"] and hellaswag_eval_loader is not None):
+    print("Running final HellaSwag evaluation...")
+    try:
+        # For final evaluation, use more batches for better accuracy
+        final_max_batches = HELLASWAG_SETTING.get("final_max_batches", 50)  # More comprehensive final eval
+        final_hellaswag_accuracy = evaluate_hellaswag(
+            model, hellaswag_eval_loader, 
+            HELLASWAG_SETTING["batch_size"], 
+            MODEL_SETTING["max_context_length"], 
+            DEVICE_SETTING["device_type"],
+            max_batches=final_max_batches
+        )
+        print(f"Final HellaSwag accuracy: {final_hellaswag_accuracy:.4f}")
+    except Exception as e:
+        print(f"Final HellaSwag evaluation failed: {e}")
+
+final_model_data = {
     "model_state_dict": model.state_dict(),
     "optimizer_state_dict": optimizer.state_dict(),
     "model_args": MODEL_SETTING,
     "train_losses": train_losses,
     "val_losses": val_losses,
     "tokens_seen": tokens_seen,
+    "hellaswag_accuracies": hellaswag_accuracies,
     "memory_stats": final_memory_stats,
     "dtype": dtype,  # Save mixed precision dtype
     "scaler_state": scaler.state_dict(),  # Save scaler state for resuming
-}, OUTPUT_SETTINGS["model_save_path"])
+}
+
+if final_hellaswag_accuracy is not None:
+    final_model_data["hellaswag_accuracy"] = final_hellaswag_accuracy
+
+torch.save(final_model_data, OUTPUT_SETTINGS["model_save_path"])
 print(f"Final model saved to {OUTPUT_SETTINGS['model_save_path']}")
 print(f"Final memory stats: {final_memory_stats}")
 print(f"Training completed with mixed precision dtype: {dtype}")
+if final_hellaswag_accuracy is not None:
+    print(f"Final HellaSwag accuracy: {final_hellaswag_accuracy:.4f}")
+
+# Finish wandb run
+if WANDB_SETTING.get("enabled", False):
+    try:
+        wandb.finish()
+        print("Wandb run finished successfully")
+    except Exception as e:
+        print(f"Warning: Failed to finish wandb run: {e}")

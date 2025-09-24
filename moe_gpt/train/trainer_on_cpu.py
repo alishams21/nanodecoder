@@ -49,6 +49,7 @@ from utils.initialization_utils import apply_gpt2_residual_scaling
 from utils.params_util import print_model_info, get_num_params
 from utils.memory_utils import memory_optimized_training, MemoryMonitor, optimize_memory_settings
 from utils.hellaswag_evaluator import HellaSwagEvalLoader, evaluate_hellaswag, download_hellaswag_data
+import wandb
 
 
 
@@ -63,6 +64,7 @@ LR_SCHEDULE_SETTING = config["lr_schedule"]
 DEVICE_SETTING = config["device"]
 MEMORY_SETTING = config["memory"]  # Add memory settings
 HELLASWAG_SETTING = config["hellaswag"]  # Add HellaSwag settings
+WANDB_SETTING = config.get("wandb")  # Add wandb settings
 RUN_TYPE = config["run_type"]
 torch.manual_seed(TRAINING_SETTING["seed"])
 
@@ -128,6 +130,7 @@ print("MODEL INFORMATION")
 print("=" * 50)
 print_model_info(model, non_embedding=True)
 print(f"Model created with {get_num_params(model)/1e6:.2f}M parameters")
+print(f"Wandb logging: {WANDB_SETTING.get('enabled', False)}")
 print("=" * 50)
 
 # Set device
@@ -194,6 +197,52 @@ if MEMORY_SETTING["auto_optimize"]:
     memory_settings.update(auto_settings)
 
 print(f"Memory optimization settings: {memory_settings}")
+
+# wandb logging setup
+if WANDB_SETTING.get("enabled", False):
+    try:
+        # Generate run name with timestamp if not specified
+        run_name = WANDB_SETTING.get("run_name")
+        if run_name:
+            run_name = f"{run_name}-{int(time.time())}"
+        else:
+            run_name = f"cpu-training-{int(time.time())}"
+        
+        # Create wandb config
+        wandb_config = {
+            'n_layer': MODEL_SETTING['n_blocks'],
+            'n_head': MODEL_SETTING['n_head'], 
+            'n_embd': MODEL_SETTING['n_embd'],
+            'n_exp': MODEL_SETTING.get('n_exp', 0),
+            'top_k': MODEL_SETTING.get('top_k', 1),
+            'use_aux_loss': MODEL_SETTING.get('use_aux_loss', False),
+            'use_router_z_loss': MODEL_SETTING.get('use_router_z_loss', False),
+            'learning_rate': OPTIMIZER_SETTING['learning_rate'],
+            'batch_size': TRAINING_SETTING['batch_size'],
+            'block_size': MODEL_SETTING['max_context_length'],
+            'device': DEVICE_SETTING["device_type"],
+            'accumulation_steps': TRAINING_SETTING.get('accumulation_steps', 1),
+            'grad_clip': TRAINING_SETTING.get('grad_clip', 1.0),
+            'weight_decay': OPTIMIZER_SETTING.get('weight_decay', 0.1),
+            'warmup_iters': LR_SCHEDULE_SETTING.get('warmup_iters', 400),
+            'lr_decay_iters': LR_SCHEDULE_SETTING.get('lr_decay_iters', 700),
+            'min_lr': LR_SCHEDULE_SETTING.get('min_lr', 0.0001),
+            'hellaswag_enabled': HELLASWAG_SETTING.get("enabled", False),
+            'hellaswag_eval_interval': HELLASWAG_SETTING.get("eval_interval", 0),
+        }
+        
+        wandb.init(
+            project=WANDB_SETTING.get("project"),
+            name=run_name,
+            config=wandb_config
+        )
+        print(f"Wandb initialized: {run_name}")
+    except ImportError:
+        print("Warning: wandb not installed. Install with: pip install wandb")
+        WANDB_SETTING["enabled"] = False
+    except Exception as e:
+        print(f"Warning: Failed to initialize wandb: {e}")
+        WANDB_SETTING["enabled"] = False
 
 # init training state
 
@@ -285,6 +334,24 @@ def cpu_based_trainer(model, optimizer, device, max_iters, eval_interval, log_in
                 if hellaswag_accuracy is not None:
                     print(f"HellaSwag accuracy: {hellaswag_accuracy:.4f}")
                 print(f"Memory usage: {memory_stats['current_mb']:.1f}MB (peak: {memory_stats['peak_mb']:.1f}MB)")
+                
+                # wandb logging
+                if WANDB_SETTING.get("enabled", False):
+                    try:
+                        log_data = {
+                            "iter": iter_num,
+                            "train/loss": losses['train'],
+                            "val/loss": losses['val'],
+                            "lr": lr,
+                            "memory_mb": memory_stats['current_mb'],
+                            "peak_memory_mb": memory_stats['peak_mb'],
+                            "tokens_seen": tokens_seen,
+                        }
+                        if hellaswag_accuracy is not None:
+                            log_data["hellaswag/accuracy"] = hellaswag_accuracy
+                        wandb.log(log_data)
+                    except Exception as e:
+                        print(f"Warning: Failed to log to wandb: {e}")
                 
 
                 if iter_num % checkpoint_interval == 0:
@@ -413,3 +480,11 @@ print(f"Final model saved to {OUTPUT_SETTINGS['model_save_path']}")
 print(f"Final memory stats: {final_memory_stats}")
 if final_hellaswag_accuracy is not None:
     print(f"Final HellaSwag accuracy: {final_hellaswag_accuracy:.4f}")
+
+# Finish wandb run
+if WANDB_SETTING.get("enabled", False):
+    try:
+        wandb.finish()
+        print("Wandb run finished successfully")
+    except Exception as e:
+        print(f"Warning: Failed to finish wandb run: {e}")
