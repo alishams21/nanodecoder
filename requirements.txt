@@ -9,3 +9,4 @@ psutil
 PyYAML
 wandb
 python-dotenv
+datasets
