@@ -330,10 +330,8 @@ def cpu_based_trainer(model, optimizer, device, max_iters, eval_interval, log_in
                 memory_monitor.update_peak()
                 memory_stats = memory_monitor.get_stats()
                  
-                print(f"Step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
-                if hellaswag_accuracy is not None:
-                    print(f"HellaSwag accuracy: {hellaswag_accuracy:.4f}")
-                print(f"Memory usage: {memory_stats['current_mb']:.1f}MB (peak: {memory_stats['peak_mb']:.1f}MB)")
+                print(f"Step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, hellaswag_accuracy {hellaswag_accuracy:.4f}")
+                print(f"Memory usage: {memory_stats['current_mb']:.1f}MB (peak: {memory_stats['peak_mb']:.1f}MB), hellaswag_accuracy {hellaswag_accuracy:.4f}")
                 
                 # wandb logging
                 if WANDB_SETTING.get("enabled", False):
@@ -407,7 +405,7 @@ def cpu_based_trainer(model, optimizer, device, max_iters, eval_interval, log_in
                 model.train()
                 
                 memory_stats = memory_monitor.get_stats()
-                print(f"Iter {iter_num}: train loss {lossf:.4f}, val loss {val_lossf:.4f}, time {dt*1000:.2f}ms, lr {lr:.2e}, memory {memory_stats['current_mb']:.1f}MB")
+                print(f"Iter {iter_num}: train loss {lossf:.4f}, val loss {val_lossf:.4f}, time {dt*1000:.2f}ms, lr {lr:.2e}, memory {memory_stats['current_mb']:.1f}MB, hellaswag_accuracy {hellaswag_accuracy:.4f}")
             
             iter_num += 1
 
