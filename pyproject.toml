@@ -33,6 +33,7 @@ dependencies = [
     "PyYAML",
     "wandb",
     "python-dotenv",
+    "datasets<3.0.0",
 ]
 
 [project.optional-dependencies]

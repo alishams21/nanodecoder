@@ -4,7 +4,7 @@ import os
 import pickle
 import math
 import numpy as np
-
+import torch
 
 def load_config(config_path="moe_gpt/config.yaml"):
     """Load configuration from YAML file."""
@@ -41,7 +41,7 @@ def get_batch(split, data_dir, model_setting, training_setting, device, device_t
         x, y = x.to(device), y.to(device)
     return x, y
 
-
+@torch.no_grad()
 def estimate_loss(model, get_batch_func, training_setting):
     """Estimate loss on train and validation sets."""
     out = {}
@@ -57,13 +57,14 @@ def estimate_loss(model, get_batch_func, training_setting):
     return out
 
 
+@torch.no_grad()
 def calc_loss_batch(input_batch, target_batch, model, device):
     input_batch, target_batch = input_batch.to(device), target_batch.to(device)
     logits = model(input_batch)
     loss = torch.nn.functional.cross_entropy(logits.flatten(0, 1), target_batch.flatten())
     return loss
 
-
+@torch.no_grad()
 def calc_loss_loader(data_loader, model, device, num_batches=None):
     total_loss = 0.
     if len(data_loader) == 0:
@@ -81,6 +82,7 @@ def calc_loss_loader(data_loader, model, device, num_batches=None):
     return total_loss / num_batches
 
 
+@torch.no_grad()
 def evaluate_model(model, train_loader, val_loader, device, eval_iter):
     model.eval()
     with torch.no_grad():
@@ -88,3 +90,5 @@ def evaluate_model(model, train_loader, val_loader, device, eval_iter):
         val_loss = calc_loss_loader(val_loader, model, device, num_batches=eval_iter)
     model.train()
     return train_loss, val_loss
+
+
