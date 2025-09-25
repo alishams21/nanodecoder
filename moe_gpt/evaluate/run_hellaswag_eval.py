@@ -17,7 +17,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from models.gpt import GPT
 from utils.training_utils import load_config
-from utils.hellaswag_evaluator import HellaSwagEvalLoader, evaluate_hellaswag, download_hellaswag_data
+from utils.hellaswag_utils import HellaSwagEvalLoader, evaluate_hellaswag, download_hellaswag_data
 
 
 def main():
@@ -89,7 +89,7 @@ def main():
         return 1
     
     # Run evaluation
-    print("Running HellaSwag evaluation...")
+    
     try:
         accuracy = evaluate_hellaswag(
             model, eval_loader, 

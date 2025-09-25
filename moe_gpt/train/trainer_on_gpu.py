@@ -312,7 +312,7 @@ def gpu_based_trainer(model, optimizer, device, max_iters, eval_interval, log_in
                     HELLASWAG_SETTING["eval_interval"] > 0 and 
                     iter_num % HELLASWAG_SETTING["eval_interval"] == 0 and
                     hellaswag_eval_loader is not None):
-                    print("Running HellaSwag evaluation...")
+                   
                     try:
                         # Use only 2 batches for quick evaluation (similar to loss evaluation)
                         # random_sample=True ensures different questions each time

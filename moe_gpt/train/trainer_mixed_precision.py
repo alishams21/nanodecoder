@@ -52,7 +52,7 @@ from utils.initialization_utils import apply_gpt2_residual_scaling
 from utils.params_util import print_model_info, get_num_params
 from utils.training_utils import load_config, get_lr, get_batch, estimate_loss
 from utils.memory_utils import memory_optimized_training, MemoryMonitor, optimize_memory_settings
-from utils.hellaswag_evaluator import HellaSwagEvalLoader, evaluate_hellaswag, download_hellaswag_data
+from utils.hellaswag_utils import HellaSwagEvalLoader, evaluate_hellaswag, download_hellaswag_data
 import wandb
 
 
@@ -346,7 +346,7 @@ def mixed_precision_gpu_trainer(model, optimizer, device, max_iters, eval_interv
                     HELLASWAG_SETTING["eval_interval"] > 0 and 
                     iter_num % HELLASWAG_SETTING["eval_interval"] == 0 and
                     hellaswag_eval_loader is not None):
-                    print("Running HellaSwag evaluation...")
+                    
                     try:
                         # Use only 2 batches for quick evaluation (similar to loss evaluation)
                         # random_sample=True ensures different questions each time
