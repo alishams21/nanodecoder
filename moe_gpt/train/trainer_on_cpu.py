@@ -54,7 +54,11 @@ import wandb
 from utils.vocab_utils import load_and_update_vocab_size
 from utils.checkpoint_utils import resume_from_checkpoint, load_optimizer_from_checkpoint
 from utils.wandb_utils import setup_wandb_logging, log_training_metrics, finish_wandb_run, log_model_info
+from utils.ddp_utils import setup_distributed_training, get_ddp_info, print_ddp_info, cleanup_ddp
 
+from contextlib import nullcontext
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.distributed import init_process_group, destroy_process_group
 
 # Load configuration
 config = load_config()
@@ -69,11 +73,47 @@ MEMORY_SETTING = config["memory"]  # Add memory settings
 HELLASWAG_SETTING = config["hellaswag"]  # Add HellaSwag settings
 WANDB_SETTING = config.get("wandb")  # Add wandb settings
 RUN_TYPE = config["run_type"]
+COMPILE_SETTING = config.get("compile")  # Default to enabled if not specified
 torch.manual_seed(TRAINING_SETTING["seed"])
 
 data_dir = DATA_SETTINGS["dataset"]
 device = torch.device(DEVICE_SETTING["device_type"])
 
+if DEVICE_SETTING["multi_gpu"]:
+    # DDP setup
+    ddp, ddp_rank, ddp_local_rank, ddp_world_size, device, master_process, seed_offset, nproc_per_node = setup_distributed_training(
+        DEVICE_SETTING, __file__
+    )
+
+    # Print DDP information
+    ddp_info = get_ddp_info()
+    print_ddp_info(ddp_info)
+else:
+    ddp = False
+    ddp_rank = 0
+    ddp_local_rank = 0
+    ddp_world_size = 1
+    master_process = True
+    seed_offset = 0
+    nproc_per_node = 1
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+# Set device
+# enable optimizations for GPU
+if DEVICE_SETTING["device_type"] == 'cuda':
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+    device_type = 'cuda'
+else:
+    device_type = 'cpu'
+device = torch.device(device_type)
+
+# Mixed precision configuration
+dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16'
+# Mixed precision context
+ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
+ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
+ 
 # Create a wrapper function for get_batch with the specific parameters
 def get_batch_wrapper(split):
     return get_batch(split, data_dir, MODEL_SETTING, TRAINING_SETTING, device, DEVICE_SETTING["device_type"])
@@ -102,29 +142,53 @@ else:
     apply_gpt2_residual_scaling(model, MODEL_SETTING)
 
 # Print detailed model information
-print("=" * 50)
-print("MODEL INFORMATION")
-print("=" * 50)
-print_model_info(model, non_embedding=True)
-print(f"Model created with {get_num_params(model)/1e6:.2f}M parameters")
-print(f"Wandb logging: {WANDB_SETTING.get('enabled', False)}")
-print("=" * 50)
+if master_process or DEVICE_SETTING["device_type"] == 'cpu':
+    print("=" * 50)
+    print("MODEL INFORMATION")
+    print("=" * 50)
+    print_model_info(model, non_embedding=True)
+    print(f"Model created with {get_num_params(model)/1e6:.2f}M parameters")
+    print(f"Wandb logging: {WANDB_SETTING.get('enabled', False)}")
+    print("=" * 50)
 
-# Set device
-device = torch.device(DEVICE_SETTING["device_type"])
+
+
+# Initialize GradScaler for mixed precision
+scaler = torch.cuda.amp.GradScaler(enabled=(dtype == 'float16'))
+
+# # Compile the model for faster training (PyTorch 2.0+)
+if DEVICE_SETTING["device_type"] == 'cuda':
+    if COMPILE_SETTING.get("enabled", True) and master_process:
+        print("Compiling the model... (takes a ~minute)")
+        unoptimized_model = model
+        model = torch.compile(model)  # requires PyTorch 2.0
+        print("Model compilation completed!")
+
+if DEVICE_SETTING["multi_gpu"] and ddp:
+    # Wrap model in DDP
+    model = DDP(model, device_ids=[ddp_local_rank])
+
 model.to(device)
-print(f"Using device: {device}")
 
-# Initialize memory monitor
+
+# Load monitor
 memory_monitor = MemoryMonitor(device)
 
-# Initialize HellaSwag evaluation if enabled
+# Load HellaSwag evaluation
 hellaswag_eval_loader, HELLASWAG_SETTING = setup_hellaswag_evaluation(HELLASWAG_SETTING, MODEL_SETTING)
 
-# Get memory settings from config
-memory_settings = {}
+# wandb logging setup
+wandb_enabled = setup_wandb_logging(
+    WANDB_SETTING, MODEL_SETTING, TRAINING_SETTING, 
+    OPTIMIZER_SETTING, LR_SCHEDULE_SETTING, DEVICE_SETTING, 
+    HELLASWAG_SETTING, f"training_{device_type}"
+)
 
-# Auto-optimize settings if enabled
+if wandb_enabled:
+    log_model_info(model, WANDB_SETTING)
+                   
+#auto-optimize settings
+memory_settings = {}
 if MEMORY_SETTING["auto_optimize"]:
     auto_settings = optimize_memory_settings(device, TRAINING_SETTING["batch_size"], 
                                            get_num_params(model) * 4 / 1024 / 1024)
@@ -132,20 +196,8 @@ if MEMORY_SETTING["auto_optimize"]:
 else:
     memory_settings.update(MEMORY_SETTING)
 
-
-# wandb logging setup
-wandb_enabled = setup_wandb_logging(
-    WANDB_SETTING, MODEL_SETTING, TRAINING_SETTING, 
-    OPTIMIZER_SETTING, LR_SCHEDULE_SETTING, DEVICE_SETTING, 
-    HELLASWAG_SETTING, "cpu-training"
-)
-
-# Log model information
-if wandb_enabled:
-    log_model_info(model, WANDB_SETTING)
-
 # init training state
-def cpu_based_trainer(model, optimizer, device, max_iters, eval_interval, log_interval, 
+def trainer(model, optimizer, device, max_iters, eval_interval, log_interval, 
                        grad_clip, iter_num, best_val_loss, eval_only=False, checkpoint_interval=None):
     """
     Train the model with the given configuration.
@@ -171,8 +223,35 @@ def cpu_based_trainer(model, optimizer, device, max_iters, eval_interval, log_in
     hellaswag_accuracies = []  # Track HellaSwag accuracy over time
     tokens_seen = 0
     
-    # Create checkpoint directory
-    os.makedirs(OUTPUT_SETTINGS["checkpoint_path"], exist_ok=True)
+    # Gradient accumulation variables
+    accumulation_count = 0
+    accumulated_loss = 0.0
+    
+    if DEVICE_SETTING["multi_gpu"]:
+           # DDP gradient sync optimization
+        if ddp:
+            # Scale accumulation steps per process for DDP
+            accumulation_steps_per_process = TRAINING_SETTING["accumulation_steps"] // ddp_world_size
+            if accumulation_steps_per_process == 0:
+                accumulation_steps_per_process = 1
+        else:
+            accumulation_steps_per_process = TRAINING_SETTING["accumulation_steps"]
+        
+        if master_process:
+            print("Starting distributed mixed precision training...")
+            if accumulation_steps_per_process > 1:
+                print(f"Gradient accumulation enabled: {accumulation_steps_per_process} steps")
+                print(f"Per-process accumulation steps: {accumulation_steps_per_process}")
+                print(f"Effective batch size: {TRAINING_SETTING['batch_size'] * TRAINING_SETTING["accumulation_steps"] * ddp_world_size}")
+                if ddp:
+                    print(f"DDP gradient sync optimization: Only sync at last micro step")
+            else:
+                print("No gradient accumulation (accumulation_steps = 1)")
+    
+    
+    if master_process:
+        # Create checkpoint directory
+        os.makedirs(OUTPUT_SETTINGS["checkpoint_path"], exist_ok=True)
     
     print("Starting training...")
     
@@ -218,17 +297,66 @@ def cpu_based_trainer(model, optimizer, device, max_iters, eval_interval, log_in
                 break
 
             # forward pass
-            logits, loss = model(X, Y)
-            # backward pass
-            loss.backward()
-            # gradient clipping
-            if grad_clip != 0.0:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), TRAINING_SETTING["grad_clip"])
-            
-            # optimizer step
-            optimizer.step()
-            optimizer.zero_grad(set_to_none=True)
-
+            if device_type == 'cpu':
+                logits, loss = model(X, Y)
+                # backward pass
+                loss.backward()
+                # gradient clipping
+                if grad_clip != 0.0:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), TRAINING_SETTING["grad_clip"])
+                # optimizer step
+                optimizer.step()
+                optimizer.zero_grad(set_to_none=True)
+            elif device_type == 'cuda':   
+                with ctx:
+                    logits, loss = model(X, Y)
+                # backward pass
+                scaler.scale(loss).backward()
+                # gradient clipping
+                if grad_clip != 0.0:
+                    scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+                # optimizer step
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad(set_to_none=True)
+            else:
+                with ctx:
+                    logits, loss = model(X, Y)
+                
+                # Scale loss by accumulation steps for gradient accumulation
+                loss = loss / accumulation_steps_per_process
+                accumulated_loss += loss.item()
+                
+                # backward pass with gradient scaling
+                scaler.scale(loss).backward()
+                
+                # Gradient accumulation logic
+                accumulation_count += 1
+                
+                # DDP gradient sync optimization
+                if ddp:
+                    # Only sync gradients at the last micro step
+                    model.require_backward_grad_sync = (accumulation_count % accumulation_steps_per_process == 0)
+                
+                # Only update model after accumulating enough gradients
+                if accumulation_count % accumulation_steps_per_process == 0:
+                    # Capture accumulated loss for logging BEFORE reset
+                    final_accumulated_loss = accumulated_loss
+                    # gradient clipping
+                    if grad_clip != 0.0:
+                        scaler.unscale_(optimizer)
+                        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+                    
+                    # optimizer step with scaler
+                    scaler.step(optimizer)
+                    scaler.update()
+                    optimizer.zero_grad(set_to_none=True)
+                    
+                    # Reset accumulation
+                    accumulation_count = 0
+                    accumulated_loss = 0.0
+                    
             # get next batch using memory-optimized loader
             X, Y = async_loader.get_batch()
             tokens_seen += X.numel()
@@ -268,7 +396,7 @@ def cpu_based_trainer(model, optimizer, device, max_iters, eval_interval, log_in
                         get_lr(iter_num, LR_SCHEDULE_SETTING, OPTIMIZER_SETTING),
                         hellaswag_accuracy, WANDB_SETTING
                     )
-            
+        
             iter_num += 1
 
             # termination
@@ -279,7 +407,7 @@ def cpu_based_trainer(model, optimizer, device, max_iters, eval_interval, log_in
     return train_losses, val_losses, track_tokens_seen, hellaswag_accuracies
 
 # Train the model
-train_losses, val_losses, tokens_seen, hellaswag_accuracies = cpu_based_trainer(
+train_losses, val_losses, tokens_seen, hellaswag_accuracies = trainer(
     model, optimizer, device,
     max_iters=TRAINING_SETTING["max_iters"],
     eval_interval=TRAINING_SETTING["eval_interval"],
@@ -319,3 +447,6 @@ print(f"Final model saved to {OUTPUT_SETTINGS['model_save_path']}")
 
 # Finish wandb run
 finish_wandb_run(WANDB_SETTING)
+
+# At the end of the file, add cleanup
+cleanup_ddp()

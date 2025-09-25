@@ -469,6 +469,9 @@ def distributed_mixed_precision_trainer(model, optimizer, device, max_iters, eva
             
             # Only update model after accumulating enough gradients
             if accumulation_count % accumulation_steps_per_process == 0:
+                # Capture accumulated loss for logging BEFORE reset
+                final_accumulated_loss = accumulated_loss
+                
                 # gradient clipping
                 if grad_clip != 0.0:
                     scaler.unscale_(optimizer)
@@ -483,17 +486,13 @@ def distributed_mixed_precision_trainer(model, optimizer, device, max_iters, eva
                 accumulation_count = 0
                 accumulated_loss = 0.0
 
-            # get next batch using memory-optimized loader
-            X, Y = async_loader.get_batch()
-            tokens_seen += X.numel()
-
             # logging
             if iter_num % log_interval == 0 and master_process:
-                t1 = time.time()
-                dt = t1 - t0
-                t0 = t1
-                # Use accumulated loss if we're in accumulation mode
-                lossf = accumulated_loss if accumulation_steps > 1 else loss.item()
+                # Use the captured accumulated loss if we just did an update
+                if accumulation_count == 0:  # We just reset, so use the captured value
+                    lossf = final_accumulated_loss
+                else:
+                    lossf = accumulated_loss if accumulation_steps > 1 else loss.item()
                 
                 # Compute validation loss for logging (using eval_iters for accuracy)
                 model.eval()

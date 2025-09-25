@@ -30,7 +30,7 @@ model:
   router_z_loss_weight: 0.01 # Router z loss weight
 
 device:
-  device_type: "cpu"  # Changed to cuda for GPU training
+  device_type: "cpu"  # Changed to cuda for GPU  or cpu for CPU
   num_workers: 4
   pin_memory: true
   non_blocking: true
@@ -43,6 +43,7 @@ device:
   cudnn_allow_tf32_autotune_deterministic: false
   cudnn_allow_tf32_autotune_deterministic_deterministic: false
   nproc_per_node: 8  # Number of processes per node for DDP training (use with torchrun --nproc_per_node=N)
+  multi_gpu: false # Use multi-GPU
 
 # Model Compilation Settings (PyTorch 2.0+)
 compile:
@@ -77,6 +78,7 @@ training:
   best_val_loss: 1000 # Best validation loss this is for initialisation
   accumulation_steps: 16  # Reduced accumulation for multi-GPU (8 GPUs * 8 batch * 4 acc = 256 effective)
   checkpoint_interval: 5000  # Save checkpoint every N iterations
+  mixed_precision: true # Use mixed precision
 
 # Learning Rate Schedule Settings
 lr_schedule:
