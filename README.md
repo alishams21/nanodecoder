@@ -14,7 +14,8 @@ Nanodecoder currently implements two different types of LLM architectures:
 ### MoE-GPT
 - **Description**: Follows the GPT style, but replaces certain dense feedforward layers with **Mixture-of-Experts (MoE)** layers (e.g., GPT-OSS, DeepSeek-V3, Switch Transformer).  
 - **Repo Note**: The `moe-gpt` folder provides **production-ready code** with comprehensive feature support.  
-- **Features table**:  
+
+## Features table
 
    | Feature | CPU | GPU | Mixed + TF32 | Multi-GPU + Compile
    |---------|-----|-----|-------|--------------|
