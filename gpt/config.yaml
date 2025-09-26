@@ -1,7 +1,7 @@
 # GPT Model Configuration
 model:
   vocab_size: 50257
-  max_context_length: 256 #1024  # Increased for OpenWebText (better context understanding)
+  max_context_length: 1024 #1024  # Increased for OpenWebText (better context understanding)
   n_embd: 768              # Embedding dimension (divisible by n_head)
   n_head: 12             # Increased attention heads for better representation
   n_blocks: 12          # Increased layers for larger dataset capacity
