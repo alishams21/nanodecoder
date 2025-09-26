@@ -138,7 +138,7 @@ def setup_wandb_logging(wandb_setting: Dict[str, Any], model_setting: Dict[str, 
 
 def log_training_metrics(iter_num: int, train_loss: float, val_loss: float, 
                         learning_rate: float, hellaswag_accuracy: Optional[float] = None,
-                        wandb_setting: Optional[Dict[str, Any]] = None) -> None:
+                        wandb_setting: Optional[Dict[str, Any]] = None, grad_norm: Optional[float] = None) -> None:
     """
     Log training metrics to wandb.
     
@@ -149,6 +149,7 @@ def log_training_metrics(iter_num: int, train_loss: float, val_loss: float,
         learning_rate: Current learning rate
         hellaswag_accuracy: HellaSwag accuracy (optional)
         wandb_setting: Wandb configuration (optional, for checking if enabled)
+        grad_norm: Gradient norm (optional)
     """
     if wandb_setting and not wandb_setting.get("enabled", False):
         return
@@ -159,6 +160,7 @@ def log_training_metrics(iter_num: int, train_loss: float, val_loss: float,
             "train/loss": train_loss,
             "val/loss": val_loss,
             "learning_rate": learning_rate,
+            "grad_norm": grad_norm,
         }
         
         if hellaswag_accuracy is not None:

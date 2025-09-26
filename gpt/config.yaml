@@ -2,9 +2,9 @@
 model:
   vocab_size: 50257
   max_context_length: 256 #1024  # Increased for OpenWebText (better context understanding)
-  n_embd: 200              # Embedding dimension (divisible by n_head)
-  n_head: 4             # Increased attention heads for better representation
-  n_blocks: 4            # Increased layers for larger dataset capacity
+  n_embd: 768              # Embedding dimension (divisible by n_head)
+  n_head: 12             # Increased attention heads for better representation
+  n_blocks: 12          # Increased layers for larger dataset capacity
   drop_rate: 0.1          # Dropout rate
   qkv_bias: false         # Query-key-value bias
   n_exp: 2 #8                # Increased experts for larger dataset diversity
@@ -44,6 +44,7 @@ device:
   cudnn_allow_tf32_autotune_deterministic_deterministic: false
   nproc_per_node: 8  # Number of processes per node for DDP training (use with torchrun --nproc_per_node=N)
   multi_gpu: false # Use multi-GPU
+  backend: "nccl" # Backend for DDP training
 
 # Model Compilation Settings (PyTorch 2.0+)
 compile:
@@ -55,8 +56,8 @@ compile:
 # Memory Management Settings
 memory:
   enable_memory_pool: true     # Enable memory pooling for tensor reuse
-  buffer_size: 2             # Increased for larger dataset (4-8 recommended)
-  max_pool_size: 4            # Increased maximum pool size for larger model
+  buffer_size: 18             # should be more that gradient_accumulation_step sIncreased for larger dataset (4-8 recommended)
+  max_pool_size: 36           # at least 2x buffer_size Increased maximum pool size for larger model
   enable_prefetching: true     # Enable background batch prefetching
   prefetch_timeout: 10.0       # Increased timeout for larger batches
   memory_monitoring: true     # Enable memory usage monitoring
@@ -71,14 +72,15 @@ training:
   seed: 123
   max_iters: 1000   #100000  # Increased iterations for OpenWebText dataset
   eval_interval: 100 ##2000  # Evaluate every N iterations
-  log_interval: 10  #1000  # Log every N iterations
-  eval_iters: 10  # Number of batches per evaluation cycle
+  log_interval: 1  #1000  # Log every N iterations
+  eval_iters: 200  # Number of batches per evaluation cycle
   grad_clip: 1.0  # Gradient clipping value
   eval_only: false # Only evaluate the model
   best_val_loss: 1000 # Best validation loss this is for initialisation
   accumulation_steps: 16  # Reduced accumulation for multi-GPU (8 GPUs * 8 batch * 4 acc = 256 effective)
   checkpoint_interval: 5000  # Save checkpoint every N iterations
   mixed_precision: true # Use mixed precision
+  gradient_accumulation_steps: 16 # Gradient accumulation steps
 
 # Learning Rate Schedule Settings
 lr_schedule:
@@ -94,7 +96,7 @@ optimizer:
 
 # Data Settings
 data:
-  dataset: "moe_gpt/data/shakespeare"  # Use OpenWebText for full training
+  dataset: "gpt/data/shakespeare"  # Use OpenWebText for full training
   train_ratio: 0.90
   eval_freq: 5
   eval_iter: 1
@@ -102,7 +104,7 @@ data:
 # HellaSwag Evaluation Settings
 hellaswag:
   enabled: true  # Enable HellaSwag evaluation
-  data_path: "moe_gpt/data/hellaswag/hellaswag_val.jsonl"  # Path to HellaSwag data
+  data_path: "gpt/data/hellaswag/hellaswag_val.jsonl"  # Path to HellaSwag data
   eval_interval: 10  # Evaluate HellaSwag every N iterations (0 to disable)
   batch_size: 20  # Batch size for HellaSwag evaluation
   max_batches: 30  # Maximum number of batches to evaluate (for quick evaluation during training)
@@ -112,16 +114,16 @@ hellaswag:
 
 # Output Settings
 output:
-  model_save_path: "moe_gpt_model.pth"
+  model_save_path: "gpt_model.pth"
   loss_plot_path: "loss.pdf"
   always_save_checkpoint: true
-  checkpoint_path: "moe_gpt/checkpoints"
+  checkpoint_path: "gpt/checkpoints"
 
 # Wandb Logging Settings
 wandb:
   enabled: true
-  project: "moe-cpu-run"
-  run_name: "moe-cpu-run"
+  project: "cpu-run"
+  run_name: "cpu-run"
   log_interval: 1
 
 run_type: "normal" # "normal" or "resume"

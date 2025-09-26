@@ -8,7 +8,7 @@ import inspect
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from utils.initialization_utils import init_weights, apply_gpt2_residual_scaling
-from utils.params_util import print_model_info
+from utils.params_util import print_model_info, get_num_params
 from .transformer import TransformerBlock
 from .normalization import Normalization
 from torch.nn import functional as F
@@ -109,3 +109,19 @@ class GPT(nn.Module):
         print(f"using fused AdamW: {use_fused}")
 
         return optimizer
+
+    def estimate_mfu(self, fwdbwd_per_iter, dt):
+        """ estimate model flops utilization (MFU) in units of A100 bfloat16 peak FLOPS """
+        # first estimate the number of flops we do per iteration.
+        # see PaLM paper Appendix B as ref: https://arxiv.org/abs/2204.02311
+        N = get_num_params(self)
+        cfg = self.config
+        L, H, Q, T = cfg["n_blocks"], cfg["n_head"], cfg["n_embd"]//cfg["n_head"], cfg["max_context_length"]
+        flops_per_token = 6*N + 12*L*H*Q*T
+        flops_per_fwdbwd = flops_per_token * T
+        flops_per_iter = flops_per_fwdbwd * fwdbwd_per_iter
+        # express our flops throughput as ratio of A100 bfloat16 peak flops
+        flops_achieved = flops_per_iter * (1.0/dt) # per second
+        flops_promised = 312e12 # A100 GPU bfloat16 peak flops is 312 TFLOPS
+        mfu = flops_achieved / flops_promised
+        return mfu

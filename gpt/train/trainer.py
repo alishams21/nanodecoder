@@ -48,7 +48,7 @@ from utils.plot_utils import plot_losses
 from utils.initialization_utils import apply_gpt2_residual_scaling
 from utils.params_util import print_model_info, get_num_params
 from utils.memory_utils import memory_optimized_training, MemoryMonitor, optimize_memory_settings
-from utils.hellaswag_utils import HellaSwagEvalLoader, evaluate_hellaswag, download_hellaswag_data, setup_hellaswag_evaluation, run_hellaswag_evaluation, run_final_hellaswag_evaluation, should_run_hellaswag_evaluation
+from utils.hellaswag_utils import setup_hellaswag_evaluation, run_hellaswag_evaluation, should_run_hellaswag_evaluation
 import wandb
 
 from utils.vocab_utils import load_and_update_vocab_size
@@ -79,40 +79,48 @@ torch.manual_seed(TRAINING_SETTING["seed"])
 data_dir = DATA_SETTINGS["dataset"]
 device = torch.device(DEVICE_SETTING["device_type"])
 
-if DEVICE_SETTING["multi_gpu"]:
-    # DDP setup
-    ddp, ddp_rank, ddp_local_rank, ddp_world_size, device, master_process, seed_offset, nproc_per_node = setup_distributed_training(
-        DEVICE_SETTING, __file__
-    )
-
-    # Print DDP information
-    ddp_info = get_ddp_info()
-    print_ddp_info(ddp_info)
+# various inits, derived attributes, I/O setup
+ddp = int(os.environ.get('RANK', -1)) != -1 # is this a ddp run?
+if ddp:
+    init_process_group(backend=DEVICE_SETTING["backend"])
+    ddp_rank = int(os.environ['RANK'])
+    ddp_local_rank = int(os.environ['LOCAL_RANK'])
+    ddp_world_size = int(os.environ['WORLD_SIZE'])
+    device = f'cuda:{ddp_local_rank}'
+    torch.cuda.set_device(device)
+    master_process = ddp_rank == 0 # this process will do logging, checkpointing etc.
+    seed_offset = ddp_rank # each process gets a different seed
+    # world_size number of processes will be training simultaneously, so we can scale
+    # down the desired gradient accumulation iterations per process proportionally
+    gradient_accumulation_steps = TRAINING_SETTING["gradient_accumulation_steps"]
+    assert gradient_accumulation_steps % ddp_world_size == 0
+    gradient_accumulation_steps //= ddp_world_size
 else:
-    ddp = False
-    ddp_rank = 0
-    ddp_local_rank = 0
-    ddp_world_size = 1
+    # if not ddp, we are running on a single gpu, and one process
     master_process = True
     seed_offset = 0
-    nproc_per_node = 1
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    ddp_world_size = 1
+    gradient_accumulation_steps = TRAINING_SETTING["gradient_accumulation_steps"]
 
-# Set device
-# enable optimizations for GPU
-if DEVICE_SETTING["device_type"] == 'cuda':
-    torch.backends.cuda.matmul.allow_tf32 = True
-    torch.backends.cudnn.allow_tf32 = True
-    device_type = 'cuda'
-else:
-    device_type = 'cpu'
-device = torch.device(device_type)
+
+tokens_per_iter = gradient_accumulation_steps * ddp_world_size * TRAINING_SETTING["batch_size"] * MODEL_SETTING["max_context_length"]
+print(f"tokens per iteration will be: {tokens_per_iter:,}")
+
+if master_process:
+    # Create checkpoint directory
+    os.makedirs(OUTPUT_SETTINGS["checkpoint_path"], exist_ok=True)
+    
+
+torch.manual_seed(1337 + seed_offset)
+torch.backends.cuda.matmul.allow_tf32 = True # allow tf32 on matmul
+torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
+device = torch.device(DEVICE_SETTING["device_type"])
 
 # Mixed precision configuration
 dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16'
 # Mixed precision context
 ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
-ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
+ctx = nullcontext() if DEVICE_SETTING["device_type"] == 'cpu' else torch.amp.autocast(device_type=DEVICE_SETTING["device_type"], dtype=ptdtype)
  
 # Create a wrapper function for get_batch with the specific parameters
 def get_batch_wrapper(split):
@@ -142,7 +150,7 @@ else:
     apply_gpt2_residual_scaling(model, MODEL_SETTING)
 
 # Print detailed model information
-if master_process or DEVICE_SETTING["device_type"] == 'cpu':
+if master_process:
     print("=" * 50)
     print("MODEL INFORMATION")
     print("=" * 50)
@@ -152,19 +160,19 @@ if master_process or DEVICE_SETTING["device_type"] == 'cpu':
     print("=" * 50)
 
 
-
-# Initialize GradScaler for mixed precision
-scaler = torch.cuda.amp.GradScaler(enabled=(dtype == 'float16'))
+if DEVICE_SETTING["device_type"] == 'cuda' and dtype == 'float16':
+    scaler = torch.cuda.amp.GradScaler(DEVICE_SETTING["device_type"], enabled=True)
+else:
+    scaler = torch.cuda.amp.GradScaler(DEVICE_SETTING["device_type"], enabled=False)  # No-op scaler for CUDA
 
 # # Compile the model for faster training (PyTorch 2.0+)
-if DEVICE_SETTING["device_type"] == 'cuda':
-    if COMPILE_SETTING.get("enabled", True) and master_process:
-        print("Compiling the model... (takes a ~minute)")
-        unoptimized_model = model
-        model = torch.compile(model)  # requires PyTorch 2.0
-        print("Model compilation completed!")
+# if COMPILE_SETTING.get("enabled", True):
+#     print("Compiling the model... (takes a ~minute)")
+#     unoptimized_model = model
+#     model = torch.compile(model)  # requires PyTorch 2.0
+#     print("Model compilation completed!")
 
-if DEVICE_SETTING["multi_gpu"] and ddp:
+if ddp:
     # Wrap model in DDP
     model = DDP(model, device_ids=[ddp_local_rank])
 
@@ -181,7 +189,7 @@ hellaswag_eval_loader, HELLASWAG_SETTING = setup_hellaswag_evaluation(HELLASWAG_
 wandb_enabled = setup_wandb_logging(
     WANDB_SETTING, MODEL_SETTING, TRAINING_SETTING, 
     OPTIMIZER_SETTING, LR_SCHEDULE_SETTING, DEVICE_SETTING, 
-    HELLASWAG_SETTING, f"training_{device_type}"
+    HELLASWAG_SETTING, f"training_{DEVICE_SETTING["device_type"]}"
 )
 
 if wandb_enabled:
@@ -195,7 +203,8 @@ if MEMORY_SETTING["auto_optimize"]:
     memory_settings.update(auto_settings)
 else:
     memory_settings.update(MEMORY_SETTING)
-
+    
+raw_model = model.module if ddp else model # unwrap DDP container if needed
 # init training state
 def trainer(model, optimizer, device, max_iters, eval_interval, log_interval, 
                        grad_clip, iter_num, best_val_loss, eval_only=False, checkpoint_interval=None):
@@ -222,36 +231,10 @@ def trainer(model, optimizer, device, max_iters, eval_interval, log_interval,
     train_losses, val_losses, track_tokens_seen = [], [], []
     hellaswag_accuracies = []  # Track HellaSwag accuracy over time
     tokens_seen = 0
+    local_iter_num = 0 # number of iterations in the lifetime of this process
+    running_mfu = -1.0
     
-    # Gradient accumulation variables
-    accumulation_count = 0
-    accumulated_loss = 0.0
-    
-    if DEVICE_SETTING["multi_gpu"]:
-           # DDP gradient sync optimization
-        if ddp:
-            # Scale accumulation steps per process for DDP
-            accumulation_steps_per_process = TRAINING_SETTING["accumulation_steps"] // ddp_world_size
-            if accumulation_steps_per_process == 0:
-                accumulation_steps_per_process = 1
-        else:
-            accumulation_steps_per_process = TRAINING_SETTING["accumulation_steps"]
-        
-        if master_process:
-            print("Starting distributed mixed precision training...")
-            if accumulation_steps_per_process > 1:
-                print(f"Gradient accumulation enabled: {accumulation_steps_per_process} steps")
-                print(f"Per-process accumulation steps: {accumulation_steps_per_process}")
-                print(f"Effective batch size: {TRAINING_SETTING['batch_size'] * TRAINING_SETTING["accumulation_steps"] * ddp_world_size}")
-                if ddp:
-                    print(f"DDP gradient sync optimization: Only sync at last micro step")
-            else:
-                print("No gradient accumulation (accumulation_steps = 1)")
-    
-    
-    if master_process:
-        # Create checkpoint directory
-        os.makedirs(OUTPUT_SETTINGS["checkpoint_path"], exist_ok=True)
+
     
     print("Starting training...")
     
@@ -273,131 +256,129 @@ def trainer(model, optimizer, device, max_iters, eval_interval, log_interval,
                 param_group['lr'] = lr
             
             # evaluate
-            if iter_num % eval_interval == 0:
+            if iter_num % eval_interval == 0 and master_process:
                 losses = estimate_loss(model, get_batch_wrapper, TRAINING_SETTING)
                 train_losses.append(losses['train'])
                 val_losses.append(losses['val'])
                 track_tokens_seen.append(tokens_seen)
                 
-            if iter_num % checkpoint_interval == 0:
+            if iter_num % checkpoint_interval and master_process == 0:
                 best_val_loss = losses['val']
                 if iter_num > 0:
+                    current_memory_stats = memory_monitor.get_stats()
                     checkpoint = {
                         'model': model.state_dict(),
                         'optimizer': optimizer.state_dict(),
                         'model_args': MODEL_SETTING,
                         'iter_num': iter_num,
                         'best_val_loss': best_val_loss,
-                        'memory_stats': memory_stats,
-                        'hellaswag_accuracy': hellaswag_accuracies[-1],
+                        'memory_stats': current_memory_stats,
+                        'hellaswag_accuracy': hellaswag_accuracies[-1] if hellaswag_accuracies else 0.0,
                     }
                     torch.save(checkpoint, os.path.join(OUTPUT_SETTINGS["checkpoint_path"], 'ckpt.pt'))
             
             if iter_num == 0 and eval_only:
                 break
 
-            # forward pass
-            if device_type == 'cpu':
-                logits, loss = model(X, Y)
-                # backward pass
-                loss.backward()
-                # gradient clipping
-                if grad_clip != 0.0:
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), TRAINING_SETTING["grad_clip"])
-                # optimizer step
-                optimizer.step()
-                optimizer.zero_grad(set_to_none=True)
-            elif device_type == 'cuda':   
-                with ctx:
-                    logits, loss = model(X, Y)
-                # backward pass
-                scaler.scale(loss).backward()
-                # gradient clipping
-                if grad_clip != 0.0:
-                    scaler.unscale_(optimizer)
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-                # optimizer step
-                scaler.step(optimizer)
-                scaler.update()
-                optimizer.zero_grad(set_to_none=True)
-            else:
-                with ctx:
-                    logits, loss = model(X, Y)
-                
-                # Scale loss by accumulation steps for gradient accumulation
-                loss = loss / accumulation_steps_per_process
-                accumulated_loss += loss.item()
-                
-                # backward pass with gradient scaling
-                scaler.scale(loss).backward()
-                
-                # Gradient accumulation logic
-                accumulation_count += 1
-                
-                # DDP gradient sync optimization
+            # forward backward update, with optional gradient accumulation to simulate larger batch size
+            # and using the GradScaler if data type is float16
+            for micro_step in range(gradient_accumulation_steps):
                 if ddp:
-                    # Only sync gradients at the last micro step
-                    model.require_backward_grad_sync = (accumulation_count % accumulation_steps_per_process == 0)
-                
-                # Only update model after accumulating enough gradients
-                if accumulation_count % accumulation_steps_per_process == 0:
-                    # Capture accumulated loss for logging BEFORE reset
-                    final_accumulated_loss = accumulated_loss
-                    # gradient clipping
-                    if grad_clip != 0.0:
-                        scaler.unscale_(optimizer)
-                        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-                    
-                    # optimizer step with scaler
-                    scaler.step(optimizer)
-                    scaler.update()
-                    optimizer.zero_grad(set_to_none=True)
-                    
-                    # Reset accumulation
-                    accumulation_count = 0
-                    accumulated_loss = 0.0
-                    
-            # get next batch using memory-optimized loader
-            X, Y = async_loader.get_batch()
-            tokens_seen += X.numel()
+                    # in DDP training we only need to sync gradients at the last micro step.
+                    # the official way to do this is with model.no_sync() context manager, but
+                    # I really dislike that this bloats the code and forces us to repeat code
+                    # looking at the source of that context manager, it just toggles this variable
+                    model.require_backward_grad_sync = (micro_step == gradient_accumulation_steps - 1)
+                with ctx:
+                    logits, loss = model(X, Y)
+                    loss = loss / gradient_accumulation_steps # scale the loss to account for gradient accumulation
+                # immediately async prefetch next batch while model is doing the forward pass on the GPU
+                # get next batch using memory-optimized loader
+                X, Y = async_loader.get_batch()
+                tokens_seen += X.numel()
+                # backward pass, with gradient scaling if training in fp16
+                scaler.scale(loss).backward()
+            
+            # clip the gradient and calculate gradient norm
+            scaler.unscale_(optimizer)
+            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), TRAINING_SETTING["grad_clip"])
+
+            
+            # step the optimizer and scaler if training in fp16
+            scaler.step(optimizer)
+            scaler.update()
+            # flush the gradients as soon as we can, no need for this memory anymore
+            optimizer.zero_grad(set_to_none=True)    
 
             # logging
-            if iter_num % log_interval == 0:
+            if iter_num % log_interval == 0 and master_process:
                 t1 = time.time()
                 dt = t1 - t0
                 t0 = t1
-                lossf = loss.item()
-                
-                # Compute validation loss for logging
+
+                # training loss
+                lossf = loss.item() * gradient_accumulation_steps
+
+                # memory stats
+                memory_monitor.update_peak()
+                memory_stats = memory_monitor.get_stats()
+
+                # MFU
+                if local_iter_num >= 5:
+                    mfu = raw_model.estimate_mfu(
+                        TRAINING_SETTING["batch_size"] * gradient_accumulation_steps, dt
+                    )
+                    running_mfu = mfu if running_mfu == -1.0 else 0.9*running_mfu + 0.1*mfu
+
+                # only evaluate validation loss at eval_interval
+                val_lossf = None
                 model.eval()
                 with torch.no_grad():
                     val_X, val_Y = get_batch_wrapper('val')
                     _, val_loss = model(val_X, val_Y)
                     val_lossf = val_loss.item()
                 model.train()
-                
+
                 # HellaSwag evaluation
                 if should_run_hellaswag_evaluation(HELLASWAG_SETTING, iter_num):
                     hellaswag_accuracy = run_hellaswag_evaluation(
-                        hellaswag_eval_loader, model, 
-                        HELLASWAG_SETTING, 
-                        max_batches=2 # Just 2 batches
+                        hellaswag_eval_loader, model,
+                        HELLASWAG_SETTING,
+                        max_batches=2
                     )
-                    hellaswag_accuracies.append(hellaswag_accuracy)  # Track accuracy
+                    hellaswag_accuracies.append(hellaswag_accuracy)
 
-                memory_monitor.update_peak()
-                memory_stats = memory_monitor.get_stats()
-                print(f"Iter {iter_num}: train loss {lossf:.4f}, val loss {val_lossf:.4f}, time {dt*1000:.2f}ms, lr {lr:.2e}, memory {memory_stats['current_mb']:.1f}MB, hellaswag_accuracy {hellaswag_accuracy}")
-                
+                # fallback if no evaluation this step
+                if val_lossf is None:
+                    val_lossf = float('nan')
+                    hellaswag_accuracy = hellaswag_accuracies[-1] if hellaswag_accuracies else float('nan')
+
+                # combined logging
+                print(
+                    f"Iter {iter_num}: "
+                    f"train loss {lossf:.4f}, val loss {val_lossf:.4f}, "
+                    f"grad_norm {grad_norm:.6f}, "
+                    f"time {dt*1000:.2f}ms, mfu {running_mfu*100:.2f}%, "
+                    f"memory {memory_stats['current_mb']:.1f}MB, "
+                    f"hellaswag_accuracy {hellaswag_accuracy}"
+                )
+
                 # wandb logging
                 if WANDB_SETTING.get("enabled", False):
                     log_training_metrics(
-                        iter_num, losses['train'], losses['val'], 
+                        iter_num,
+                        losses['train'],
+                        losses['val'] if iter_num % eval_interval == 0 else None,
                         get_lr(iter_num, LR_SCHEDULE_SETTING, OPTIMIZER_SETTING),
-                        hellaswag_accuracy, WANDB_SETTING
+                        hellaswag_accuracy,
+                        WANDB_SETTING,
+                        grad_norm=grad_norm
                     )
+
         
             iter_num += 1
+            local_iter_num += 1                   
+            
 
             # termination
             if iter_num > max_iters:

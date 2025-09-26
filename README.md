@@ -46,8 +46,8 @@ A GPT-style model that replaces certain dense feedforward layers with Mixture-of
 
 ![GPT+MOE](images/moe/moe.png)
 
-**For MoE-GPT Internals check out**: 
-📖 **[MoE Internals Guide](MOE_GPT_INTERNALS.md)** 
+**For Production and MoE-GPT Internals check out**: 
+📖 **[Production + MoE Internals Guide](PRODUCTION_MOE_GPT_INTERNALS.md)** 
 
 
 ## Dense-GPT Architecture

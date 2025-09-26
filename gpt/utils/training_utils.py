@@ -6,7 +6,7 @@ import math
 import numpy as np
 import torch
 
-def load_config(config_path="moe_gpt/config.yaml"):
+def load_config(config_path="gpt/config.yaml"):
     """Load configuration from YAML file."""
     with open(config_path, 'r') as file:
         config = yaml.safe_load(file)

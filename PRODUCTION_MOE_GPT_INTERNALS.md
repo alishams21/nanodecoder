@@ -26,23 +26,15 @@ Traditional dense transformer models face a fundamental scaling challenge: as mo
 
 ## Training Options
 
-This MoE GPT implementation provides 4 different training approaches, each optimized for different use cases and hardware requirements. 
+GPT implementation provides different training approaches, based on configuration of ```gpt/config.yaml`` file.
 
-| Use Case | Recommended Trainer | Why |
-|----------|-------------------|-----|
-| Development/Testing | `trainer_on_cpu.py` | No GPU required, fast iteration |
-| Single GPU Production | `trainer_mixed_precision.py` | Best performance + memory efficiency |
-| Multi-GPU Production | `trainer_distributed_gpu.py` | Maximum performance and scalability |
-| Memory Constrained | `trainer_mixed_precision.py` | 50% memory reduction with mixed precision |
-| Maximum Speed | `trainer_distributed_gpu.py` | Linear scaling with GPUs + compilation |
-
-
-### 1. CPU Training (`trainer_on_cpu.py`)
-**Best for: Development, testing, small models, CPU-only environments**
+To run each you need following command:
 
 ```bash
-uv run python moe_gpt/train/trainer_on_cpu.py
+uv run python gpt/train/trainer.py
 ```
+
+### 1. CPU Training
 
 **Features:**
 - Standard PyTorch CPU operations without GPU dependencies
@@ -56,12 +48,8 @@ uv run python moe_gpt/train/trainer_on_cpu.py
 - Sufficient RAM for model and batch size
 - No GPU installation required
 
-### 2. Single GPU Training (`trainer_on_gpu.py`)
+### 2. Single GPU Training
 **Best for: Single GPU setups, production training, high-throughput scenarios**
-
-```bash
-uv run python moe_gpt/train/trainer_on_gpu.py
-```
 
 **Features:**
 - TF32 (Tensor Float 32-bit) support for ~1.5x faster matrix operations
@@ -76,16 +64,11 @@ uv run python moe_gpt/train/trainer_on_gpu.py
 - CUDA: 11.0+ for TF32 operations
 - Sufficient GPU memory for model and batch size
 
-### 3. Mixed Precision Training (`trainer_mixed_precision.py`)
-**Best for: Large MoE models, memory-constrained environments, production training**
-
-```bash
-uv run python moe_gpt/train/trainer_mixed_precision.py
-```
+### 3. Mixed Precision Training
+**Best for: GPU with mixed precision, memory-constrained environments, production training**
 
 **Features:**
 - Mixed Precision Training: bfloat16/float16 with automatic detection
-- All GPU optimizations from `trainer_on_gpu.py`
 - Memory savings from mixed precision (up to 50% memory reduction)
 - ~1.5x speedup over standard FP32 training
 - ~99.9% accuracy retention with TF32 + mixed precision optimizations
@@ -96,16 +79,8 @@ uv run python moe_gpt/train/trainer_mixed_precision.py
 - CUDA: 11.0+ for TF32 operations
 - Sufficient GPU memory (reduced requirements due to mixed precision)
 
-### 4. Distributed Multi-GPU Training (`trainer_distributed_gpu.py`)
+### 4. Distributed Multi-GPU Training 
 **Best for: Large-scale training, production environments, maximum performance**
-
-```bash
-# Single node, multiple GPUs
-uv run python moe_gpt/train/trainer_distributed_gpu.py
-
-# Multi-node training
-torchrun --nproc_per_node=4 --nnodes=2 --node_rank=0 --master_addr="192.168.1.1" --master_port=1234 moe_gpt/train/trainer_distributed_gpu.py
-```
 
 **Features:**
 - Distributed Data Parallel (DDP) for multi-GPU training
