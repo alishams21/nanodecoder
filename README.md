@@ -2,6 +2,9 @@
 
 Nanodecoder is meant as a foundation for experimenting, and extending Transformer architectures. Modern large language models (LLMs) predominantly adopt a decoder-only transformer architecture, omitting separate encoder modules and cross-attention mechanisms typical of encoder-decoder designs. These decoder-only models rely solely on causal self-attention within stacked transformer blocks, enabling efficient and scalable autoregressive text generation. Such a structure is ideal for tasks that require prediction of the next token in a sequence, making it the backbone of systems like GPT-4 and Llama-2. 
 
+The model could surpass GPT2 performance with cluster of 8xA100 GPU and cost of around 35$ for training.
+
+![gpt2-training](images/performance.jpeg) 
 
 ## GPT Variants
 
